@@ -49,7 +49,8 @@ static int counter_etimer;
 static struct rtimer timer_rtimer;
 static struct etimer timer_etimer;
 static rtimer_clock_t timeout_rtimer = RTIMER_SECOND /4;
-static int prv_lux_value = NULL;
+// static int prv_lux_value = NULL;
+static int prv_lux_value = -1;
 static int buzzer_status = 0;
 /*---------------------------------------------------------------------------*/
 static int get_mpu_reading(void);
@@ -98,7 +99,8 @@ get_light_reading()
     lux_value = value / 100;
     printf("OPT: Light=%d.%02d lux\n", lux_value, value % 100);
 
-    if (prv_lux_value != NULL && abs(lux_value - prv_lux_value) >= 300) {
+    // if (prv_lux_value != NULL && abs(lux_value - prv_lux_value) >= 300) {
+    if (prv_lux_value != -1 && abs(lux_value - prv_lux_value) >= 300) {
       return 1;
     }
     prv_lux_value = lux_value;
@@ -179,8 +181,9 @@ PROCESS_THREAD(process_main, ev, data)
   buzzer_init();
 
   while (1) {
-    prv_lux_value = NULL; // Reset prv_lux_value
-    init_opt_reading(); // Reset opt reading
+    // prv_lux_value = NULL; // Reset prv_lux_value
+    prv_lux_value = -1; // Reset prv_lux_value
+    init_opt_reading(); // Resets opt reading
     schedule_rtimer(); // Restart sensors
 
     // Yield until polled
