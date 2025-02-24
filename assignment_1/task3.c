@@ -49,7 +49,7 @@ static int counter_etimer;
 static struct rtimer timer_rtimer;
 static struct etimer timer_etimer;
 static rtimer_clock_t timeout_rtimer = RTIMER_SECOND /4;
-static int prv_lux_value = NULL;
+static int prv_lux_value = -1;
 // static int buzzer_status = 0;
 static int buzz_time = 0;
 /*---------------------------------------------------------------------------*/
@@ -77,11 +77,11 @@ do_rtimer_timeout(struct rtimer *timer, void *ptr)
   counter_rtimer++;
   printf("rtimer: %d (cnt) %d (ticks) %d.%d%d%d (sec) \n",counter_rtimer,now, s, ms1,ms2,ms3); 
 
-  if (get_mpu_reading()) { // significant motion detected
-    if (get_light_reading()) {
+  if (get_mpu_reading()) { // significant motion detected --> enter INTERIM
+    if (get_light_reading()) { // significant light change occurs --> BUZZ mode
         process_poll(&process_main);
     }
-  } else {
+  } else { // else remain in IDLE mode
     schedule_rtimer();
   }
 }
@@ -102,7 +102,7 @@ get_light_reading()
     lux_value = value / 100;
     printf("OPT: Light=%d.%02d lux\n", lux_value, value % 100);
 
-    if (prv_lux_value != NULL && abs(lux_value - prv_lux_value) >= 300) {
+    if (prv_lux_value != -1 && abs(lux_value - prv_lux_value) >= 300) {
       return 1;
     }
     prv_lux_value = lux_value;
@@ -162,7 +162,7 @@ get_mpu_reading()
     return 1;
   }
 
-  return 0
+  return 0;
 
 }
 
@@ -186,7 +186,7 @@ activate_buzzer()
   counter_etimer++;
   printf("Time(E): %d (cnt) %d (ticks) %d.%d%d%d (sec) \n",counter_etimer,t, s, ms1,ms2,ms3); 
  
-  if (buzz_time == 2) {
+  if (buzz_time == 2) { // ensures buzzer activate for 2s (?)
     buzzer_stop();
     buzz_time = 0;
   } else {
@@ -204,13 +204,13 @@ PROCESS_THREAD(process_main, ev, data)
   buzzer_init();
 
   while (1) {
-    prv_lux_value = NULL; // Reset prv_lux_value
+    prv_lux_value = -1; // Reset prv_lux_value
     schedule_rtimer(); // Restart sensors
 
     // Yield until polled
     PROCESS_WAIT_EVENT_UNTIL(ev == PROCESS_EVENT_POLL);
 
-    // enter BUZZ mode
+    // starts BUZZ mode
     while (1) {
         for (loop_cnt = 0; loop_cnt < 2; loop_cnt++) {
             activate_buzzer();
