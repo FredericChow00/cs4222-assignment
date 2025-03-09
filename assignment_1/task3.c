@@ -50,15 +50,15 @@ static struct rtimer timer_rtimer;
 static struct etimer timer_etimer;
 static rtimer_clock_t timeout_rtimer = RTIMER_SECOND /4;
 static int prv_lux_value = -1;
-// static int buzzer_status = 0;
 static int buzz_time = 0;
+static int buzzer_status = 0;
 /*---------------------------------------------------------------------------*/
 static int get_mpu_reading(void);
 static void init_opt_reading(void);
 static int get_light_reading(void);
 static void init_mpu_reading(void);
 static void schedule_rtimer(void);
-static void activate_buzzer(void);
+static void toggle_buzzer(void);
 
 /*---------------------------------------------------------------------------*/
 
@@ -78,9 +78,7 @@ do_rtimer_timeout(struct rtimer *timer, void *ptr)
   printf("rtimer: %d (cnt) %d (ticks) %d.%d%d%d (sec) \n",counter_rtimer,now, s, ms1,ms2,ms3); 
 
   if (get_mpu_reading()) { // significant motion detected --> enter INTERIM
-    if (get_light_reading()) { // significant light change occurs --> BUZZ mode
-        process_poll(&process_main);
-    }
+    process_poll(&process_main);
   } else { // else remain in IDLE mode
     schedule_rtimer();
   }
@@ -173,7 +171,7 @@ init_mpu_reading(void)
 }
 
 static void
-activate_buzzer()
+toggle_buzzer()
 {
   clock_time_t t;
   int s, ms1, ms2, ms3;
@@ -184,15 +182,14 @@ activate_buzzer()
   ms3 = ((t% CLOCK_SECOND)*1000/CLOCK_SECOND)%10;
 
   counter_etimer++;
-  printf("Time(E): %d (cnt) %d (ticks) %d.%d%d%d (sec) \n",counter_etimer,t, s, ms1,ms2,ms3); 
- 
-  if (buzz_time == 2) { // ensures buzzer activate for 2s (?)
+  printf("Toggling buzzer to %d at time(E): %d (cnt) %d (ticks) %d.%d%d%d (sec) \n",!buzzer_status,counter_etimer,t,s,ms1,ms2,ms3); 
+  // Toggle the buzzer
+  if (buzzer_status)
     buzzer_stop();
-    buzz_time = 0;
-  } else {
+  else
     buzzer_start(1000);
-    buzz_time += 1;
-  }
+
+  buzzer_status = !buzzer_status;
 }
 
 PROCESS_THREAD(process_main, ev, data)
@@ -207,24 +204,28 @@ PROCESS_THREAD(process_main, ev, data)
     prv_lux_value = -1; // Reset prv_lux_value
     schedule_rtimer(); // Restart sensors
 
-    // Yield until polled
+    // Yield until enter INTERIM
     PROCESS_WAIT_EVENT_UNTIL(ev == PROCESS_EVENT_POLL);
 
-    // starts BUZZ mode
-    while (1) {
-        for (loop_cnt = 0; loop_cnt < 2; loop_cnt++) {
-            activate_buzzer();
-            etimer_set(&timer_etimer, CLOCK_SECOND);  //1s timer
-            PROCESS_WAIT_EVENT_UNTIL(ev == PROCESS_EVENT_TIMER);
-        }
-
-        etimer_set(&timer_etimer, CLOCK_SECOND * 4);  // pause for 4s
-        PROCESS_WAIT_EVENT_UNTIL(ev == PROCESS_EVENT_TIMER);
-
-        if (get_light_reading()) { // if have new significant light change
-            break; // move back to IDLE
-        }
+    while (!get_light_reading()) {
+      PROCESS_PAUSE();
     }
+
+    while (1) {
+      // starts BUZZ mode
+      toggle_buzzer(); //activate buzzer
+      etimer_set(&timer_etimer, CLOCK_SECOND * 2);  // to allow buzzer to activate for 2s
+      PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&timer_etimer));
+
+      toggle_buzzer(); //pause buzzer
+      etimer_set(&timer_etimer, CLOCK_SECOND * 4);  // pause for 4s
+      PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&timer_etimer));
+
+      if (get_light_reading()) { // if have new significant light change
+          break; // move back to IDLE
+      }
+    }
+    
   }
 
   PROCESS_END();
