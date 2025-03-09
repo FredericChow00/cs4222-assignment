@@ -174,13 +174,13 @@ PROCESS_THREAD(process_main, ev, data)
     PROCESS_WAIT_EVENT_UNTIL(ev == PROCESS_EVENT_POLL);
 
     // Start buzzing
-    for (loop_cnt = 0; loop_cnt < 3; loop_cnt++) { // Needs to be odd number
+    for (loop_cnt = 0; loop_cnt < 9; loop_cnt++) { // Needs to be odd number. 18s according to TA
       toggle_buzzing();
 
       etimer_set(&timer_etimer, CLOCK_SECOND * 2);  // 2s timer
       PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&timer_etimer));
     }
-    toggle_buzzing();
+    toggle_buzzing(); // Stop buzzing and return without waiting
   }
 
   PROCESS_END();
