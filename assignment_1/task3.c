@@ -49,8 +49,8 @@ static int counter_etimer;
 static struct rtimer timer_rtimer;
 static struct etimer timer_etimer;
 static rtimer_clock_t timeout_rtimer = RTIMER_SECOND /4;
-// static int prv_lux_value = NULL;
 static int prv_lux_value = -1;
+static int buzz_time = 0;
 static int buzzer_status = 0;
 /*---------------------------------------------------------------------------*/
 static int get_mpu_reading(void);
@@ -58,6 +58,7 @@ static void init_opt_reading(void);
 static int get_light_reading(void);
 static void init_mpu_reading(void);
 static void schedule_rtimer(void);
+static void toggle_buzzer(void);
 
 /*---------------------------------------------------------------------------*/
 
@@ -76,9 +77,9 @@ do_rtimer_timeout(struct rtimer *timer, void *ptr)
   counter_rtimer++;
   printf("rtimer: %d (cnt) %d (ticks) %d.%d%d%d (sec) \n",counter_rtimer,now, s, ms1,ms2,ms3); 
 
-  if (get_light_reading() || get_mpu_reading()) {
+  if (get_mpu_reading()) { // significant motion detected --> enter INTERIM
     process_poll(&process_main);
-  } else {
+  } else { // else remain in IDLE mode
     schedule_rtimer();
   }
 }
@@ -99,7 +100,6 @@ get_light_reading()
     lux_value = value / 100;
     printf("OPT: Light=%d.%02d lux\n", lux_value, value % 100);
 
-    // if (prv_lux_value != NULL && abs(lux_value - prv_lux_value) >= 300) {
     if (prv_lux_value != -1 && abs(lux_value - prv_lux_value) >= 300) {
       return 1;
     }
@@ -126,23 +126,42 @@ get_mpu_reading()
 
   value = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_GYRO_X);
   printf("MPU Gyro: X= %d.%02d deg/sec\n", value/100, abs(value)%100);
+  if (value > 200) {
+    return 1;
+  }
 
   value = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_GYRO_Y);
   printf("MPU Gyro: Y= %d.%02d deg/sec\n", value/100, abs(value)%100);
+  if (value > 200) {
+    return 1;
+  }
 
   value = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_GYRO_Z);
   printf("MPU Gyro: Z= %d.%02d deg/sec\n", value/100, abs(value)%100);
+  if (value > 200) {
+    return 1;
+  }
 
   value = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_ACC_X);
   printf("MPU Acc: X= %d.%02d G\n", value/100, abs(value)%100);
+  if (value > 200) {
+    return 1;
+  }
 
   value = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_ACC_Y);
   printf("MPU Acc: Y= %d.%02d G\n", value/100, abs(value)%100);
+  if (value > 200) {
+    return 1;
+  }
 
   value = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_ACC_Z);
   printf("MPU Acc: Z= %d.%02d G\n", value/100, abs(value)%100);
+  if (value > 200) {
+    return 1;
+  }
 
   return 0;
+
 }
 
 static void
@@ -152,7 +171,7 @@ init_mpu_reading(void)
 }
 
 static void
-toggle_buzzing()
+toggle_buzzer()
 {
   clock_time_t t;
   int s, ms1, ms2, ms3;
@@ -178,25 +197,35 @@ PROCESS_THREAD(process_main, ev, data)
   PROCESS_BEGIN();
 
   init_mpu_reading();
+  init_opt_reading();
   buzzer_init();
 
   while (1) {
-    // prv_lux_value = NULL; // Reset prv_lux_value
     prv_lux_value = -1; // Reset prv_lux_value
-    init_opt_reading(); // Resets opt reading
     schedule_rtimer(); // Restart sensors
 
-    // Yield until polled
+    // Yield until enter INTERIM
     PROCESS_WAIT_EVENT_UNTIL(ev == PROCESS_EVENT_POLL);
 
-    // Start buzzing
-    for (loop_cnt = 0; loop_cnt < 3; loop_cnt++) { // Needs to be odd number
-      toggle_buzzing();
-
-      etimer_set(&timer_etimer, CLOCK_SECOND * 2);  // 2s timer
-      PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&timer_etimer));
+    while (!get_light_reading()) {
+      PROCESS_PAUSE();
     }
-    toggle_buzzing();
+
+    while (1) {
+      // starts BUZZ mode
+      toggle_buzzer(); //activate buzzer
+      etimer_set(&timer_etimer, CLOCK_SECOND * 2);  // to allow buzzer to activate for 2s
+      PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&timer_etimer));
+
+      toggle_buzzer(); //pause buzzer
+      etimer_set(&timer_etimer, CLOCK_SECOND * 4);  // pause for 4s
+      PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&timer_etimer));
+
+      if (get_light_reading()) { // if have new significant light change
+          break; // move back to IDLE
+      }
+    }
+    
   }
 
   PROCESS_END();
