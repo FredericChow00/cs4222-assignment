@@ -136,7 +136,7 @@ static void idle_main() {
   int z = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_ACC_Z);
 
   double all = sqrt(x*x + y*y + z*z);
-  printf("%d %d %d %f\n", x,y,x,all);
+  // printf("%d %d %d %f\n", x,y,x,all);
   if (all <= 200.0) {
     rtimer_set(&timer, RTIMER_NOW() + RTIMER_SECOND / 4, 0, idle_main, NULL);
   } else {
