@@ -62,6 +62,7 @@ static void buzz_main() {
   int val = opt_3001_sensor.value(0);
   rtimer_clock_t now = RTIMER_NOW();
   if (val != CC26XX_SENSOR_READING_ERROR) {
+    val = val / 100;
     if (prev != -1 && abs(val - prev) >= 300) {
       change_happened = true;
       printf("b: light %d -> %d\n", prev, val);
@@ -90,6 +91,7 @@ static void wait_main() {
   int val = opt_3001_sensor.value(0);
   rtimer_clock_t now = RTIMER_NOW();
   if (val != CC26XX_SENSOR_READING_ERROR) {
+    val = val / 100;
     if (prev != -1 && abs(val - prev) >= 300) {
       change_happened = true;
       printf("b: light %d -> %d\n", prev, val);
@@ -188,6 +190,7 @@ static void interim_main() {
   int val = opt_3001_sensor.value(0);
   rtimer_clock_t now = RTIMER_NOW();
   if (val != CC26XX_SENSOR_READING_ERROR) {
+    val = val / 100;
     if (prev != -1 && abs(val - prev) >= 300) {
       printf("b: light %d -> %d\n", prev, val);
       printf("INTERIM -> BUZZ\n");
