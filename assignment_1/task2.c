@@ -21,7 +21,7 @@ static rtimer_clock_t timeout_rtimer = RTIMER_SECOND /4;
 static int prv_lux_value = -1;
 static int buzzer_status = 0;
 #define ACCEL_THRESHOLD 200 
-#define GYRO_THRESHOLD 10000 
+#define GYRO_THRESHOLD 20000 
 /*---------------------------------------------------------------------------*/
 static int get_mpu_reading(void);
 static void init_opt_reading(void);
@@ -91,46 +91,33 @@ init_opt_reading(void)
 static int
 get_mpu_reading()
 {
-  int value;
+  int x = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_ACC_X);
+  printf("MPU Acc: X= %d.%02d G\n", x/100, abs(x)%100);
 
-  value = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_GYRO_X);
-  printf("MPU Gyro: X= %d.%02d deg/sec\n", value/100, abs(value)%100);
-  if (value > GYRO_THRESHOLD) {
+  int y = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_ACC_Y);
+  printf("MPU Acc: Y= %d.%02d G\n", y/100, abs(y)%100);
+
+  int z = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_ACC_Z);
+  printf("MPU Acc: Z= %d.%02d G\n", z/100, abs(z)%100);
+
+  int rot_x = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_GYRO_X);
+  printf("MPU Gyro: X= %d.%02d deg/sec\n", rot_x/100, abs(rot_x)%100);
+
+  int rot_y = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_GYRO_Y);
+  printf("MPU Gyro: Y= %d.%02d deg/sec\n", rot_y/100, abs(rot_y)%100);
+
+  int rot_z = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_GYRO_Z);
+  printf("MPU Gyro: Z= %d.%02d deg/sec\n", rot_z/100, abs(rot_z)%100);
+
+  int all = sqrt(x*x + y*y + z*z);
+
+  int rot_all = sqrt(rot_x*rot_x + rot_y*rot_y + rot_z*rot_z);
+  
+  if (all > ACCEL_THRESHOLD || rot_all > GYRO_THRESHOLD) {
     return 1;
+  } else {
+    return 0;
   }
-
-  value = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_GYRO_Y);
-  printf("MPU Gyro: Y= %d.%02d deg/sec\n", value/100, abs(value)%100);
-  if (value > GYRO_THRESHOLD) {
-    return 1;
-  }
-
-  value = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_GYRO_Z);
-  printf("MPU Gyro: Z= %d.%02d deg/sec\n", value/100, abs(value)%100);
-  if (value > GYRO_THRESHOLD) {
-    return 1;
-  }
-
-  value = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_ACC_X);
-  printf("MPU Acc: X= %d.%02d G\n", value/100, abs(value)%100);
-  if (value > ACCEL_THRESHOLD) {
-    return 1;
-  }
-
-  value = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_ACC_Y);
-  printf("MPU Acc: Y= %d.%02d G\n", value/100, abs(value)%100);
-  if (value > ACCEL_THRESHOLD) {
-    return 1;
-  }
-
-  value = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_ACC_Z);
-  printf("MPU Acc: Z= %d.%02d G\n", value/100, abs(value)%100);
-  if (value > ACCEL_THRESHOLD) {
-    return 1;
-  }
-
-
-  return 0;
 }
 
 static void
