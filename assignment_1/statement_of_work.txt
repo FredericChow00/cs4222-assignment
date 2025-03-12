@@ -1,0 +1,8 @@
+Bryan (A0252218L): Made task2 code for light detection, buzzing sequence, and timer logic. Checked logic for task3 for improvements & bug fixes. Double-checked task1 to ensure values recorded were correct.
+
+Dilys (A0238114M):
+
+Ryan (A0255300W):
+
+Frederic (A0234411W):
+
