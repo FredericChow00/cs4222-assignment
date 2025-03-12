@@ -135,9 +135,17 @@ static void idle_main() {
 
   int z = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_ACC_Z);
 
+  int rot_x = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_GYRO_X);
+
+  int rot_y = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_GYRO_Y);
+
+  int rot_z = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_GYRO_Z);
+
   double all = sqrt(x*x + y*y + z*z);
+
+  double rot_all = sqrt(rot_x*rot_x, rot_y*rot_y, rot_z*rot_z);
   // printf("%d %d %d %f\n", x,y,x,all);
-  if (all <= 200.0) {
+  if (all <= 200.0 && rot_all <= 10000.0) {
     rtimer_set(&timer, RTIMER_NOW() + RTIMER_SECOND / 4, 0, idle_main, NULL);
   } else {
     printf("IDLE -> INTERIM\n");
