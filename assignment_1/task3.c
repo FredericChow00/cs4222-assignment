@@ -75,7 +75,7 @@ static void buzz_main() {
       return;
     }
   } else {
-    // printf("b: light %d -> %d\n", prev, val);
+    printf("b: light %d -> %d\n", prev, val);
     change_happened = true;
   }
   prev = val;
@@ -95,7 +95,7 @@ static void wait_main() {
       return;
     }
   } else {
-    // printf("w: light %d -> %d\n", prev, val);
+    printf("w: light %d -> %d\n", prev, val);
     change_happened = true;
   }
   prev = val;
@@ -171,7 +171,7 @@ static void interim_main() {
     SENSORS_ACTIVATE(opt_3001_sensor);
     rtimer_set(&timer, now + RTIMER_SECOND / 4, 0, interim_main, NULL);
   } else {
-    // printf("w: light %d -> %d\n", prev, val);
+    printf("i: light %d -> %d\n", prev, val);
     printf("INTERIM -> BUZZ\n");
     buzz_n_wait();
   }
