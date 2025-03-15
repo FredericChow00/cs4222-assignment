@@ -1,33 +1,3 @@
-/*
-* Copyright (C) 2015, Intel Corporation. All rights reserved.
-*
-* Redistribution and use in source and binary forms, with or without
-* modification, are permitted provided that the following conditions
-* are met:
-* 1. Redistributions of source code must retain the above copyright
-*    notice, this list of conditions and the following disclaimer.
-* 2. Redistributions in binary form must reproduce the above copyright
-*    notice, this list of conditions and the following disclaimer in the
-*    documentation and/or other materials provided with the distribution.
-*
-* 3. Neither the name of the copyright holder nor the names of its
-*    contributors may be used to endorse or promote products derived
-*    from this software without specific prior written permission.
-*
-* THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-* ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-* LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
-* FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE
-* COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
-* INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
-* (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-* SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
-* HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
-* STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-* ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
-* OF THE POSSIBILITY OF SUCH DAMAGE.
-*/
-
 #include <stdio.h>
 
 #include "contiki.h"
@@ -39,7 +9,6 @@
 
 #include <stdint.h>
 
-// PROCESS(process_rtimer, "RTimer");
 PROCESS(process_main, "Main");
 AUTOSTART_PROCESSES(&process_main);
 
@@ -49,8 +18,10 @@ static int counter_etimer;
 static struct rtimer timer_rtimer;
 static struct etimer timer_etimer;
 static rtimer_clock_t timeout_rtimer = RTIMER_SECOND /4;
-static int prv_lux_value = NULL;
+static int prv_lux_value = -1;
 static int buzzer_status = 0;
+#define ACCEL_THRESHOLD 200 
+#define GYRO_THRESHOLD 20000 
 /*---------------------------------------------------------------------------*/
 static int get_mpu_reading(void);
 static void init_opt_reading(void);
@@ -98,7 +69,7 @@ get_light_reading()
     lux_value = value / 100;
     printf("OPT: Light=%d.%02d lux\n", lux_value, value % 100);
 
-    if (prv_lux_value != NULL && abs(lux_value - prv_lux_value) >= 300) {
+    if (prv_lux_value != -1 && abs(lux_value - prv_lux_value) >= 300) {
       return 1;
     }
     prv_lux_value = lux_value;
@@ -120,27 +91,33 @@ init_opt_reading(void)
 static int
 get_mpu_reading()
 {
-  int value;
+  int x = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_ACC_X);
+  printf("MPU Acc: X= %d.%02d G\n", x/100, abs(x)%100);
 
-  value = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_GYRO_X);
-  printf("MPU Gyro: X= %d.%02d deg/sec\n", value/100, abs(value)%100);
+  int y = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_ACC_Y);
+  printf("MPU Acc: Y= %d.%02d G\n", y/100, abs(y)%100);
 
-  value = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_GYRO_Y);
-  printf("MPU Gyro: Y= %d.%02d deg/sec\n", value/100, abs(value)%100);
+  int z = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_ACC_Z);
+  printf("MPU Acc: Z= %d.%02d G\n", z/100, abs(z)%100);
 
-  value = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_GYRO_Z);
-  printf("MPU Gyro: Z= %d.%02d deg/sec\n", value/100, abs(value)%100);
+  int rot_x = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_GYRO_X);
+  printf("MPU Gyro: X= %d.%02d deg/sec\n", rot_x/100, abs(rot_x)%100);
 
-  value = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_ACC_X);
-  printf("MPU Acc: X= %d.%02d G\n", value/100, abs(value)%100);
+  int rot_y = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_GYRO_Y);
+  printf("MPU Gyro: Y= %d.%02d deg/sec\n", rot_y/100, abs(rot_y)%100);
 
-  value = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_ACC_Y);
-  printf("MPU Acc: Y= %d.%02d G\n", value/100, abs(value)%100);
+  int rot_z = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_GYRO_Z);
+  printf("MPU Gyro: Z= %d.%02d deg/sec\n", rot_z/100, abs(rot_z)%100);
 
-  value = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_ACC_Z);
-  printf("MPU Acc: Z= %d.%02d G\n", value/100, abs(value)%100);
+  int all = sqrt(x*x + y*y + z*z);
 
-  return 0;
+  int rot_all = sqrt(rot_x*rot_x + rot_y*rot_y + rot_z*rot_z);
+  
+  if (all > ACCEL_THRESHOLD || rot_all > GYRO_THRESHOLD) {
+    return 1;
+  } else {
+    return 0;
+  }
 }
 
 static void
@@ -179,21 +156,21 @@ PROCESS_THREAD(process_main, ev, data)
   buzzer_init();
 
   while (1) {
-    prv_lux_value = NULL; // Reset prv_lux_value
-    init_opt_reading(); // Reset opt reading
+    prv_lux_value = -1; // Reset prv_lux_value
+    init_opt_reading(); // Resets opt reading
     schedule_rtimer(); // Restart sensors
 
     // Yield until polled
     PROCESS_WAIT_EVENT_UNTIL(ev == PROCESS_EVENT_POLL);
 
     // Start buzzing
-    for (loop_cnt = 0; loop_cnt < 3; loop_cnt++) { // Needs to be odd number
+    for (loop_cnt = 0; loop_cnt < 9; loop_cnt++) { // Needs to be odd number. 18s according to TA
       toggle_buzzing();
 
       etimer_set(&timer_etimer, CLOCK_SECOND * 2);  // 2s timer
       PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&timer_etimer));
     }
-    toggle_buzzing();
+    toggle_buzzing(); // Stop buzzing and return without waiting
   }
 
   PROCESS_END();
