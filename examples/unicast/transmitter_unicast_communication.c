@@ -12,7 +12,7 @@
 #define LOG_LEVEL LOG_LEVEL_INFO
 
 /* Configuration */
-#define SEND_INTERVAL (8 * CLOCK_SECOND)
+#define SEND_INTERVAL (CLOCK_SECOND / 4)
 static linkaddr_t dest_addr =         {{ 0x00, 0x12, 0x4b, 0x00, 0x13, 0x24, 0x12, 0x82 }}; //replace this with your receiver's link address
 
 
@@ -49,7 +49,7 @@ PROCESS_THREAD(unicast_process, ev, data)
 
   if(!linkaddr_cmp(&dest_addr, &linkaddr_node_addr)) { //ensures destination is not same as sender
     etimer_set(&periodic_timer, SEND_INTERVAL);
-    while(1) {
+    for (int i = 0; i < 50; ++i) {
       PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&periodic_timer));
       LOG_INFO("Sending %u to ", count);
       LOG_INFO_LLADDR(&dest_addr);
