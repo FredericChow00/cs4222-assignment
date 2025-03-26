@@ -27,9 +27,9 @@ void input_callback(const void *data, uint16_t len,
   if(len == sizeof(unsigned)) {
     unsigned count;
     memcpy(&count, data, sizeof(count));
-    LOG_INFO("Received %u with rssi %d from", count, (signed short)packetbuf_attr(PACKETBUF_ATTR_RSSI));
-    LOG_INFO_LLADDR(src);
-    LOG_INFO_("\n");
+    printf("Received %u with rssi %d from \n", count, (signed short)packetbuf_attr(PACKETBUF_ATTR_RSSI));
+    printf(src);
+    //LOG_INFO_("\n");
   }
 }
 /*---------------------------------------------------------------------------*/
@@ -49,11 +49,11 @@ PROCESS_THREAD(unicast_process, ev, data)
 
   if(!linkaddr_cmp(&dest_addr, &linkaddr_node_addr)) { //ensures destination is not same as sender
     etimer_set(&periodic_timer, SEND_INTERVAL);
-    for (int i = 0; i < 50; ++i) {
+    for (int i = 0; i < 240; ++i) {
       PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&periodic_timer));
-      LOG_INFO("Sending %u to ", count);
-      LOG_INFO_LLADDR(&dest_addr);
-      LOG_INFO_("\n");
+      //printf("Sending %u to ", count);
+      //LOG_INFO_LLADDR(&dest_addr);
+      //LOG_INFO_("\n");
 
       NETSTACK_NETWORK.output(&dest_addr); //Packet transmission
       count++;

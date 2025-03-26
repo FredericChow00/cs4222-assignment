@@ -49,7 +49,7 @@ PROCESS_THREAD(unicast_process, ev, data)
 
   if(!linkaddr_cmp(&dest_addr, &linkaddr_node_addr)) { //ensures destination is not same as sender
     etimer_set(&periodic_timer, SEND_INTERVAL);
-    for (int i = 0; i < 50; ++i) {
+    for (int i = 0; i < 240; ++i) {
       PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&periodic_timer));
       LOG_INFO("Sending %u to ", count);
       LOG_INFO_LLADDR(&dest_addr);
