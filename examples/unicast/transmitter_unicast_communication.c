@@ -13,8 +13,9 @@
 
 /* Configuration */
 #define SEND_INTERVAL (CLOCK_SECOND / 4)
-static linkaddr_t dest_addr =         {{ 0x00, 0x12, 0x4b, 0x00, 0x13, 0x24, 0x12, 0x82 }}; //replace this with your receiver's link address
 
+static linkaddr_t dest_addr =         {{ 0x00, 0x12, 0x4b, 0x00, 0x13, 0x24, 0x12, 0x82 }}; // receiver addr
+// static linkaddr_t dest_addr =         {{ 0x00, 0x12, 0x4b, 0x00, 0x12, 0x04, 0xe1, 0x98 }}; // transmitter addr
 
 /*---------------------------------------------------------------------------*/
 PROCESS(unicast_process, "One to One Communication");
