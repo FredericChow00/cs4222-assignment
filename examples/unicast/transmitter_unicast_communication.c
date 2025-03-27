@@ -14,8 +14,8 @@
 /* Configuration */
 #define SEND_INTERVAL (CLOCK_SECOND / 4)
 
-static linkaddr_t dest_addr =         {{ 0x00, 0x12, 0x4b, 0x00, 0x13, 0x24, 0x12, 0x82 }}; // receiver addr
-// static linkaddr_t dest_addr =         {{ 0x00, 0x12, 0x4b, 0x00, 0x12, 0x04, 0xe1, 0x98 }}; // transmitter addr
+static linkaddr_t dest_addr =         {{ 0x00, 0x12, 0x4b, 0x00, 0x12, 0x9a, 0x4d, 0x02 }}; // receiver addr
+//static linkaddr_t dest_addr =         {{ 0x00, 0x12, 0x4b, 0x00, 0x12, 0x04, 0xe1, 0x98 }}; // transmitter addr
 
 /*---------------------------------------------------------------------------*/
 PROCESS(unicast_process, "One to One Communication");
@@ -50,14 +50,13 @@ PROCESS_THREAD(unicast_process, ev, data)
 
   if(!linkaddr_cmp(&dest_addr, &linkaddr_node_addr)) { //ensures destination is not same as sender
     etimer_set(&periodic_timer, SEND_INTERVAL);
-    for (int i = 0; i < 240; ++i) {
+    for (count = 0; count < 240; ++count) {
       PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&periodic_timer));
       LOG_INFO("Sending %u to ", count);
       LOG_INFO_LLADDR(&dest_addr);
       LOG_INFO_("\n");
 
       NETSTACK_NETWORK.output(&dest_addr); //Packet transmission
-      count++;
       etimer_reset(&periodic_timer);
     }
   }

@@ -49,14 +49,13 @@ PROCESS_THREAD(unicast_process, ev, data)
 
   if(!linkaddr_cmp(&dest_addr, &linkaddr_node_addr)) { //ensures destination is not same as sender
     etimer_set(&periodic_timer, SEND_INTERVAL);
-    for (int i = 0; i < 240; ++i) {
+    for (count = 0; count < 240; ++count) {
       PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&periodic_timer));
       //printf("Sending %u to ", count);
       //LOG_INFO_LLADDR(&dest_addr);
       //LOG_INFO_("\n");
 
       NETSTACK_NETWORK.output(&dest_addr); //Packet transmission
-      count++;
       etimer_reset(&periodic_timer);
     }
   }
