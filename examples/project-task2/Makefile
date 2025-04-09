@@ -1,4 +1,4 @@
-CONTIKI_PROJECT = nbr
+CONTIKI_PROJECT = nbr sender receiver
 all: $(CONTIKI_PROJECT)
 
 TARGET=cc26x0-cc13x0

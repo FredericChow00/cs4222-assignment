@@ -12,6 +12,7 @@
 #include <string.h>
 #include <stdio.h> 
 #include "node-id.h"
+#include "board-peripherals.h"
 
 // Identification information of the node
 
@@ -22,15 +23,24 @@
 #define SLEEP_CYCLE  9 - 1        	      // 0 for never sleep
 #define SLEEP_SLOT WAKE_TIME   // sleep slot should not be too large to prevent overflow
 
+#define MAX_DATA_POINTS 60   // Collect 60 sets of readings
+
 // For neighbour discovery, we would like to send message to everyone. We use Broadcast address:
 linkaddr_t dest_addr;
 
 #define NUM_SEND 2
 /*---------------------------------------------------------------------------*/
 typedef struct {
+  int light_intensity;  // Light reading
+  int motion_value;     // Motion reading (aggregated values from accelerometer and gyroscope)
+} sensor_data_tuple;
+
+typedef struct {
   unsigned long src_id;
   unsigned long timestamp;
-  unsigned long seq;
+  unsigned int count;
+  sensor_data_tuple data[MAX_DATA_POINTS]; // Start with MAX_DATA_POINTS number of invalid points in the array
+  unsigned int data_count;  // Number of valid data points in the array
   
 } data_packet_struct;
 
@@ -40,6 +50,7 @@ typedef struct {
 
 // sender timer implemented using rtimer
 static struct rtimer rt;
+static struct etimer data_collection_timer;
 
 // Protothread variable
 static struct pt pt;
@@ -50,9 +61,17 @@ static data_packet_struct data_packet;
 // Current time stamp of the node
 unsigned long curr_timestamp;
 
+// Function prototypes for sensor reading
+static int get_light_reading(void);
+static void init_opt_reading(void);
+static int get_motion_reading(void);
+static void init_mpu_reading(void);
+
 // Starts the main contiki neighbour discovery process
 PROCESS(nbr_discovery_process, "cc2650 neighbour discovery process");
-AUTOSTART_PROCESSES(&nbr_discovery_process);
+PROCESS(data_collection_process, "Sensor data collection process");
+
+AUTOSTART_PROCESSES(&data_collection_process);
 
 // Function called after reception of a packet
 void receive_packet_callback(const void *data, uint16_t len, const linkaddr_t *src, const linkaddr_t *dest) 
@@ -71,8 +90,9 @@ void receive_packet_callback(const void *data, uint16_t len, const linkaddr_t *s
     
 
     // Print the details of the received packet
-    printf("recv %lu rssi %d at: %3lu.%03lu\n",
-        received_packet_data.seq, (signed short)packetbuf_attr(PACKETBUF_ATTR_RSSI),
+    printf("recv data from node id: %lu, with rssi %d at: %3lu.%03lu\n",
+        received_packet_data.src_id, 
+        (signed short)packetbuf_attr(PACKETBUF_ATTR_RSSI),
         received_packet_data.timestamp / CLOCK_SECOND,
         ((received_packet_data.timestamp % CLOCK_SECOND)*1000) / CLOCK_SECOND);
  
@@ -104,19 +124,18 @@ char sender_scheduler(struct rtimer *t, void *ptr) {
     // send NUM_SEND number of neighbour discovery beacon packets
     for(i = 0; i < NUM_SEND; i++){
 
-      
-     
-       // Initialize the nullnet module with information of packet to be trasnmitted
+      // Initialize the nullnet module with information of packet to be trasnmitted
       nullnet_buf = (uint8_t *)&data_packet; //data transmitted
       nullnet_len = sizeof(data_packet); //length of data transmitted
-      
-      data_packet.seq++;
-      
+            
       curr_timestamp = clock_time();
       
       data_packet.timestamp = curr_timestamp;
 
-      //printf("Send seq# %lu  @ %8lu ticks   %3lu.%03lu\n", data_packet.seq, curr_timestamp, curr_timestamp / CLOCK_SECOND, ((curr_timestamp % CLOCK_SECOND)*1000) / CLOCK_SECOND);
+      printf("Sending packet with %u data points @ %3lu.%03lu\n", 
+        data_packet.data_count, 
+        curr_timestamp / CLOCK_SECOND, 
+        ((curr_timestamp % CLOCK_SECOND)*1000) / CLOCK_SECOND);
 
       NETSTACK_NETWORK.output(&dest_addr); //Packet transmission
       
@@ -155,6 +174,93 @@ char sender_scheduler(struct rtimer *t, void *ptr) {
   PT_END(&pt);
 }
 
+// Sensor reading functions
+static int get_light_reading() {
+  int value, lux_value;
+
+  value = opt_3001_sensor.value(0);
+  if (value != CC26XX_SENSOR_READING_ERROR) {
+    lux_value = value / 100;
+    printf("Light reading: %d.%02d lux\n", lux_value, value % 100);
+  } else {
+    printf("Light Sensor's Warming Up\n");
+  }
+
+  init_opt_reading();
+
+  return lux_value;
+}
+
+static void init_opt_reading(void) {
+  SENSORS_ACTIVATE(opt_3001_sensor);
+}
+
+static int get_motion_reading() {
+  int x = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_ACC_X);
+  int y = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_ACC_Y);
+  int z = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_ACC_Z);
+  
+  int rot_x = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_GYRO_X);
+  int rot_y = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_GYRO_Y);
+  int rot_z = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_GYRO_Z);
+
+  // Calculate magnitude of acceleration and rotation
+  int accel_magnitude = sqrt(x*x + y*y + z*z);
+  int gyro_magnitude = sqrt(rot_x*rot_x + rot_y*rot_y + rot_z*rot_z);
+  
+  // Aggregate accel and gyro magnutude into a single value
+  int motion_value = accel_magnitude + (gyro_magnitude / 100);
+  
+  printf("Motion reading: Accel=%d, Gyro=%d, Combined=%d\n", 
+    accel_magnitude, gyro_magnitude, motion_value);
+    
+  return motion_value;
+}
+
+static void init_mpu_reading(void) {
+  mpu_9250_sensor.configure(SENSORS_ACTIVE, MPU_9250_SENSOR_TYPE_ALL);
+}
+
+// Data collection process
+PROCESS_THREAD(data_collection_process, ev, data) {
+  PROCESS_BEGIN();
+  
+  // Initialize sensors
+  init_opt_reading();
+  init_mpu_reading();
+  
+  // Initialize data packet
+  data_packet.src_id = node_id;
+  data_packet.data_count = 0;
+  
+  printf("Starting data collection: %d readings at 1 per second\n", MAX_DATA_POINTS);
+  
+  // Collect data points at 1 second intervals
+  while(data_packet.data_count < MAX_DATA_POINTS) {
+    etimer_set(&data_collection_timer, CLOCK_SECOND);
+    PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&data_collection_timer));
+    
+    // Get sensor readings
+    int light = get_light_reading();
+    int motion = get_motion_reading();
+    
+    // Store in the data packet
+    data_packet.data[data_packet.data_count].light_intensity = light;
+    data_packet.data[data_packet.data_count].motion_value = motion;
+    
+    printf("Collected data point %d: Light=%d, Motion=%d\n", 
+      data_packet.data_count, light, motion);
+      
+    data_packet.data_count++;
+  }
+  
+  printf("Data collection complete! Collected %u data points\n", data_packet.data_count);
+  
+  // Start the neighbor discovery process
+  process_start(&nbr_discovery_process, NULL);
+  
+  PROCESS_END();
+}
 
 // Main thread that handles the neighbour discovery process
 PROCESS_THREAD(nbr_discovery_process, ev, data)
@@ -163,10 +269,6 @@ PROCESS_THREAD(nbr_discovery_process, ev, data)
  // static struct etimer periodic_timer;
 
   PROCESS_BEGIN();
-
-    // initialize data packet sent for neighbour discovery exchange
-  data_packet.src_id = node_id; //Initialize the node ID
-  data_packet.seq = 0; //Initialize the sequence number of the packet
   
   nullnet_set_input_callback(receive_packet_callback); //initialize receiver callback
   linkaddr_copy(&dest_addr, &linkaddr_null);
