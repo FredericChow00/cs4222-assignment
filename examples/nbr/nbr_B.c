@@ -17,10 +17,10 @@
 
 
 // Configures the wake-up timer for neighbour discovery 
-#define WAKE_TIME RTIMER_SECOND/200    // 10 HZ, 0.1s
+#define WAKE_TIME RTIMER_SECOND/22    // 10 HZ, 0.1s
 
-#define SLEEP_CYCLE  30 - 1        	      // 0 for never sleep
-#define SLEEP_SLOT RTIMER_SECOND/200   // sleep slot should not be too large to prevent overflow
+#define SLEEP_CYCLE  11 - 1        	      // 0 for never sleep
+#define SLEEP_SLOT WAKE_TIME   // sleep slot should not be too large to prevent overflow
 
 // For neighbour discovery, we would like to send message to everyone. We use Broadcast address:
 linkaddr_t dest_addr;
@@ -71,7 +71,7 @@ void receive_packet_callback(const void *data, uint16_t len, const linkaddr_t *s
     
 
     // Print the details of the received packet
-    printf("Received neighbour discovery packet %lu with rssi %d at timestamp: %3lu.%03lu\n",
+    printf("recv %lu rssi %d at: %3lu.%03lu\n",
         received_packet_data.seq, (signed short)packetbuf_attr(PACKETBUF_ATTR_RSSI),
         received_packet_data.timestamp / CLOCK_SECOND,
         ((received_packet_data.timestamp % CLOCK_SECOND)*1000) / CLOCK_SECOND);
@@ -146,10 +146,8 @@ char sender_scheduler(struct rtimer *t, void *ptr) {
       //printf(" Sleep for %d slots \n",NumSleep);
 
       // NumSleep should be a constant or static int
-      for(i = 0; i < NumSleep; i++){
-        rtimer_set(t, RTIMER_TIME(t) + SLEEP_SLOT, 1, (rtimer_callback_t)sender_scheduler, ptr);
-        PT_YIELD(&pt);
-      }
+      rtimer_set(t, RTIMER_TIME(t) + SLEEP_SLOT * SLEEP_CYCLE, 1, (rtimer_callback_t)sender_scheduler, ptr);
+      PT_YIELD(&pt);
 
     }
   }
