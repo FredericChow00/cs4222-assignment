@@ -13,6 +13,7 @@
 #include <stdio.h> 
 #include "node-id.h"
 #include "board-peripherals.h"
+#include <math.h>
 
 // Identification information of the node
 
@@ -23,7 +24,8 @@
 #define SLEEP_CYCLE  9 - 1        	      // 0 for never sleep
 #define SLEEP_SLOT WAKE_TIME   // sleep slot should not be too large to prevent overflow
 
-#define MAX_DATA_POINTS 60   // Collect 60 sets of readings
+// #define MAX_DATA_POINTS 60   // Collect 60 sets of readings
+#define MAX_DATA_POINTS 10  // Collect 10 sets of readings for testing
 
 // For neighbour discovery, we would like to send message to everyone. We use Broadcast address:
 linkaddr_t dest_addr;
@@ -58,6 +60,9 @@ static struct pt pt;
 // Structure holding the data to be transmitted
 static data_packet_struct data_packet;
 
+// Structure holding data for discovery process
+static data_packet_struct discovery_pkt;
+
 // Current time stamp of the node
 unsigned long curr_timestamp;
 
@@ -80,7 +85,7 @@ void receive_packet_callback(const void *data, uint16_t len, const linkaddr_t *s
 
   // Check if the received packet size matches with what we expect it to be
 
-  if(len == sizeof(data_packet)) {
+  if(len == sizeof(discovery_pkt)) {
 
  
     static data_packet_struct received_packet_data;
@@ -125,17 +130,17 @@ char sender_scheduler(struct rtimer *t, void *ptr) {
     for(i = 0; i < NUM_SEND; i++){
 
       // Initialize the nullnet module with information of packet to be trasnmitted
-      nullnet_buf = (uint8_t *)&data_packet; //data transmitted
-      nullnet_len = sizeof(data_packet); //length of data transmitted
+      nullnet_buf = (uint8_t *)&discovery_pkt; //data transmitted
+      nullnet_len = sizeof(discovery_pkt); //length of data transmitted
             
+      discovery_pkt.count++;
+
       curr_timestamp = clock_time();
       
-      data_packet.timestamp = curr_timestamp;
+      discovery_pkt.timestamp = curr_timestamp;
 
-      printf("Sending packet with %u data points @ %3lu.%03lu\n", 
-        data_packet.data_count, 
-        curr_timestamp / CLOCK_SECOND, 
-        ((curr_timestamp % CLOCK_SECOND)*1000) / CLOCK_SECOND);
+      printf("Sending packet with seq num: %d FROM NODE: %d of size: %d\n", 
+        discovery_pkt.count, discovery_pkt.src_id, sizeof(discovery_pkt));
 
       NETSTACK_NETWORK.output(&dest_addr); //Packet transmission
       
@@ -269,6 +274,9 @@ PROCESS_THREAD(nbr_discovery_process, ev, data)
  // static struct etimer periodic_timer;
 
   PROCESS_BEGIN();
+
+  discovery_pkt.src_id = node_id; //Initialize the node ID
+  discovery_pkt.count = 0; //Initialize the sequence number of the packet
   
   nullnet_set_input_callback(receive_packet_callback); //initialize receiver callback
   linkaddr_copy(&dest_addr, &linkaddr_null);
