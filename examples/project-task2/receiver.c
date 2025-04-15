@@ -139,12 +139,12 @@ void receive_packet_callback(const void *data, uint16_t len, const linkaddr_t *s
       send_ack = 0; // Reset to no longer send
   
       printf("Light: %d", received_packet_data.light_data[0]);
-      for (int data_count = 1; data_count < MAX_DATA_POINTS; data_count++) {
+      for (int data_count = 1; data_count < SEND_REPEATS * MAX_DATA_POINTS; data_count++) {
         printf(", %d", received_packet_data.light_data[data_count]);
       }
   
       printf("\nMotion: %d", received_packet_data.motion_data[0]);
-      for (int data_count = 1; data_count < MAX_DATA_POINTS; data_count++) {
+      for (int data_count = 1; data_count < SEND_REPEATS * MAX_DATA_POINTS; data_count++) {
         printf(", %d", received_packet_data.light_data[data_count]);
       }
       printf("\n");
@@ -178,9 +178,9 @@ char listening_scheduler(struct rtimer *t, void *ptr) {
       // don't need to send any packets until received a discovery packet from node A
       if (send_ack) {
         printf("SENDING ACK");  
-        // // send pkt to node A to signal to it to start transferring stored readings
-        // nullnet_buf = (uint8_t *)&discovery_pkt; //data transmitted
-        // nullnet_len = sizeof(discovery_pkt); //length of data transmitted
+        // send pkt to node A to signal to it to start transferring stored readings
+        nullnet_buf = (uint8_t *)&discovery_pkt; //data transmitted
+        nullnet_len = sizeof(discovery_pkt); //length of data transmitted
         NETSTACK_NETWORK.output(&dest_addr); //Packet transmission
       }
 
@@ -201,7 +201,7 @@ char listening_scheduler(struct rtimer *t, void *ptr) {
     rtimer_set(t, RTIMER_TIME(t) + SLEEP_SLOT * SLEEP_CYCLE, 1, (rtimer_callback_t)listening_scheduler, ptr);
     PT_YIELD(&pt);
     
-    send_ack = 0; // Reset to no longer send (since node A cycle < node B cycle, if node B did not receive by now, node A has disconnected
+    // send_ack = 0; // Reset to no longer send (since node A cycle < node B cycle, if node B did not receive by now, node A has disconnected
   }
   
   PT_END(&pt);
