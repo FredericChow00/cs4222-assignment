@@ -67,6 +67,9 @@ static discovery_packet_struct discovery_pkt;
 // Current time stamp of the node
 unsigned long curr_timestamp;
 
+// Whether this data packet has been sent
+static int data_packet_sent;
+
 // Function prototypes for sensor reading
 static int get_light_reading(void);
 static void init_opt_reading(void);
@@ -104,6 +107,7 @@ void receive_packet_callback(const void *data, uint16_t len, const linkaddr_t *s
     
     // check if there is good link quality
     if (rssi < -70) {
+      printf("Link quality was insufficient with rssi: %d\n", rssi);
       return;
     }
 
@@ -121,6 +125,7 @@ void receive_packet_callback(const void *data, uint16_t len, const linkaddr_t *s
     nullnet_len = sizeof(data_packet); //length of data transmitted
     printf("%lu TRANSFER %lu RSSI: %d", curr_timestamp, data_packet.dest_id, rssi);
     NETSTACK_NETWORK.output(&dest_addr); //Packet transmission
+    data_packet_sent = 1;
   }
 
 }
@@ -166,6 +171,10 @@ char sender_scheduler(struct rtimer *t, void *ptr) {
       }
     }
 
+    if (data_packet_sent) {
+      break;
+    }
+
     // sleep for a fixed number of slots
     // radio off
     NETSTACK_RADIO.off();
@@ -173,6 +182,10 @@ char sender_scheduler(struct rtimer *t, void *ptr) {
     // (SLEEP_SLOT = 65536 / 22) * (SLEEP_CYCLE = 9 - 1) <= 2147483647 so it won't overflow
     rtimer_set(t, RTIMER_TIME(t) + SLEEP_SLOT * SLEEP_CYCLE, 1, (rtimer_callback_t)sender_scheduler, ptr);
     PT_YIELD(&pt);
+
+    if (data_packet_sent) {
+      break;
+    }
   }
   
   PT_END(&pt);
@@ -231,58 +244,53 @@ PROCESS_THREAD(data_collection_process, ev, data) {
 
   PROCESS_BEGIN();
   
-  // Initialize sensors
-  init_opt_reading();
-  init_mpu_reading();
-  
-  printf("Starting data collection: %d readings at 1 per second\n", MAX_DATA_POINTS);
-  
-  // Collect data points at 1 second intervals
-  while(data_count < MAX_DATA_POINTS) {
-    etimer_set(&data_collection_timer, CLOCK_SECOND);
-    PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&data_collection_timer));
+  printf("discovery size: %d\n", sizeof(discovery_pkt));
+  printf("discovery size: %d\n", sizeof(discovery_packet_struct));
+  printf("discovery size: %d\n", sizeof(data_packet));
+  printf("discovery size: %d\n", sizeof(data_packet_struct));
+  while (1) {
+    // Initialize sensors
+    init_opt_reading();
+    init_mpu_reading();
     
-    // Get sensor readings
-    int light = get_light_reading();
-    int motion = get_motion_reading();
+    printf("Starting data collection: %d readings at 1 per second\n", MAX_DATA_POINTS);
     
-    // Store in the data packet
-    data_packet.light_data[data_count] = light;
-    data_packet.motion_data[data_count] = motion;
-    
-    printf("Collected data point %d: Light=%d, Motion=%d\n", data_count, light, motion);
+    // Collect data points at 1 second intervals
+    while(data_count < MAX_DATA_POINTS) {
+      etimer_set(&data_collection_timer, CLOCK_SECOND);
+      PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&data_collection_timer));
       
-    data_count++;
+      // Get sensor readings
+      int light = get_light_reading();
+      int motion = get_motion_reading();
+      
+      // Store in the data packet
+      data_packet.light_data[data_count] = light;
+      data_packet.motion_data[data_count] = motion;
+      
+      printf("Collected data point %d: Light=%d, Motion=%d\n", data_count, light, motion);
+        
+      data_count++;
+    }
+    
+    data_packet_sent = 0;
+    printf("Data collection complete! Collected %u data points\n", data_count);
+    
+    // Start the neighbor discovery process
+    discovery_pkt.src_id = node_id; //Initialize the node ID
+    discovery_pkt.dest_id = node_id; // Same as src_id to indicate as broadcast message
+    data_packet.src_id = node_id; //Initialize the node ID
+    
+    nullnet_set_input_callback(receive_packet_callback); //initialize receiver callback
+    linkaddr_copy(&dest_addr, &linkaddr_null);
+
+    printf("CC2650 neighbour discovery\n");
+    printf("Node %d will be sending discovery packets of size %d Bytes\n", node_id, (int)sizeof(discovery_packet_struct));
+
+    // Start sender in one millisecond.
+    rtimer_set(&rt, RTIMER_NOW() + (RTIMER_SECOND / 1000), 1, (rtimer_callback_t)sender_scheduler, NULL);
+    break;
   }
-  
-  printf("Data collection complete! Collected %u data points\n", data_count);
-  
-  // Start the neighbor discovery process
-  process_start(&nbr_discovery_process, NULL);
-  
-  PROCESS_END();
-}
-
-// Main thread that handles the neighbour discovery process
-PROCESS_THREAD(nbr_discovery_process, ev, data)
-{
-
- // static struct etimer periodic_timer;
-
-  PROCESS_BEGIN();
-
-  discovery_pkt.src_id = node_id; //Initialize the node ID
-  discovery_pkt.dest_id = node_id; // Same as src_id to indicate as broadcast message
-  data_packet.src_id = node_id; //Initialize the node ID
-  
-  nullnet_set_input_callback(receive_packet_callback); //initialize receiver callback
-  linkaddr_copy(&dest_addr, &linkaddr_null);
-
-  printf("CC2650 neighbour discovery\n");
-  printf("Node %d will be sending discovery packets of size %d Bytes\n", node_id, (int)sizeof(discovery_packet_struct));
-
-  // Start sender in one millisecond.
-  rtimer_set(&rt, RTIMER_NOW() + (RTIMER_SECOND / 1000), 1, (rtimer_callback_t)sender_scheduler, NULL);
 
   PROCESS_END();
 }

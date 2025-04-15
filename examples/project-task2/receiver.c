@@ -72,8 +72,9 @@ AUTOSTART_PROCESSES(&nbr_discovery_process);
 // Function called after reception of a packet
 void receive_packet_callback(const void *data, uint16_t len, const linkaddr_t *src, const linkaddr_t *dest) 
 {
+  printf("RECEIVED PACKET SIZE: %d, send_ack = %d\n", len, send_ack);
   // Check if the received packet size matches with what we expect it to be
-  if(len == sizeof(discovery_pkt)) {
+  if(len == sizeof(discovery_pkt) && send_ack == 0) { // 12
     static discovery_packet_struct received_packet_data;
     
     // Copy the content of packet into the data structure
@@ -81,7 +82,7 @@ void receive_packet_callback(const void *data, uint16_t len, const linkaddr_t *s
 
     // Check if packet was a broadcast message
     if (received_packet_data.src_id != received_packet_data.dest_id) {
-      return;
+      // return;
     }
 
     int rssi = (signed short)packetbuf_attr(PACKETBUF_ATTR_RSSI);
@@ -97,6 +98,7 @@ void receive_packet_callback(const void *data, uint16_t len, const linkaddr_t *s
 
     // check if there is good link quality
     if (rssi < -70) {
+      printf("Link quality was insufficient with rssi: %d\n", rssi);
       return;
     }
 
@@ -110,7 +112,7 @@ void receive_packet_callback(const void *data, uint16_t len, const linkaddr_t *s
     send_ack = 1; // Keep retrying if send on line below fails
     NETSTACK_NETWORK.output(&dest_addr); //Packet transmission
         
-  } else if (len == sizeof(data_packet_struct)) {
+  } else if (len == sizeof(data_packet_struct)) { // 88
     static data_packet_struct received_packet_data;
     
     // Copy the content of packet into the data structure
@@ -162,6 +164,11 @@ char listening_scheduler(struct rtimer *t, void *ptr) {
     for(i = 0; i < NUM_SEND; i++){
       // don't need to send any packets until received a discovery packet from node A
       if (send_ack) {
+        printf("SENDING ACK");  
+
+        // send pkt to node A to signal to it to start transferring stored readings
+        nullnet_buf = (uint8_t *)&discovery_pkt; //data transmitted
+        nullnet_len = sizeof(discovery_pkt); //length of data transmitted
         NETSTACK_NETWORK.output(&dest_addr); //Packet transmission
       }
 
