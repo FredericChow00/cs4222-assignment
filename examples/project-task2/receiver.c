@@ -166,9 +166,9 @@ char listening_scheduler(struct rtimer *t, void *ptr) {
       if (send_ack) {
         printf("SENDING ACK");  
 
-        // send pkt to node A to signal to it to start transferring stored readings
-        nullnet_buf = (uint8_t *)&discovery_pkt; //data transmitted
-        nullnet_len = sizeof(discovery_pkt); //length of data transmitted
+        // // send pkt to node A to signal to it to start transferring stored readings
+        // nullnet_buf = (uint8_t *)&discovery_pkt; //data transmitted
+        // nullnet_len = sizeof(discovery_pkt); //length of data transmitted
         NETSTACK_NETWORK.output(&dest_addr); //Packet transmission
       }
 

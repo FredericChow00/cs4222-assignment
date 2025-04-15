@@ -31,6 +31,8 @@
 linkaddr_t dest_addr;
 
 #define NUM_SEND 2
+
+#define MOTION_THRESHOLD 500 
 /*---------------------------------------------------------------------------*/
 typedef struct {
   unsigned long src_id;
@@ -254,7 +256,15 @@ PROCESS_THREAD(data_collection_process, ev, data) {
     init_mpu_reading();
     
     printf("Starting data collection: %d readings at 1 per second\n", MAX_DATA_POINTS);
-    
+
+    int motion = 0;
+
+    // Block here until motion > MOTION_THRESHOLD
+    while (motion < MOTION_THRESHOLD) {
+      printf("Waiting for significant motion...");
+      motion = get_motion_reading();
+    };
+
     // Collect data points at 1 second intervals
     while(data_count < MAX_DATA_POINTS) {
       etimer_set(&data_collection_timer, CLOCK_SECOND);
@@ -262,8 +272,8 @@ PROCESS_THREAD(data_collection_process, ev, data) {
       
       // Get sensor readings
       int light = get_light_reading();
-      int motion = get_motion_reading();
-      
+      motion = get_motion_reading();
+
       // Store in the data packet
       data_packet.light_data[data_count] = light;
       data_packet.motion_data[data_count] = motion;
