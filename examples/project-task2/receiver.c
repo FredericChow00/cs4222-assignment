@@ -12,6 +12,7 @@
 #include <string.h>
 #include <stdio.h> 
 #include "node-id.h"
+#include "board-peripherals.h"
 
 // Identification information of the node
 
@@ -65,6 +66,9 @@ unsigned long curr_timestamp;
 // Whether node B should be sending ACK discovery packets
 static int send_ack = 0;
 
+static int get_motion_reading(void);
+static void init_mpu_reading(void);
+
 // Starts the main contiki neighbour discovery process
 PROCESS(nbr_discovery_process, "cc2650 neighbour discovery process");
 AUTOSTART_PROCESSES(&nbr_discovery_process);
@@ -72,9 +76,9 @@ AUTOSTART_PROCESSES(&nbr_discovery_process);
 // Function called after reception of a packet
 void receive_packet_callback(const void *data, uint16_t len, const linkaddr_t *src, const linkaddr_t *dest) 
 {
-  printf("RECEIVED PACKET SIZE: %d, send_ack = %d\n", len, send_ack);
+  printf("Size of discovery pkt: %d", len);
   // Check if the received packet size matches with what we expect it to be
-  if(len == sizeof(discovery_pkt) && send_ack == 0) { // 12
+  if(len == sizeof(discovery_pkt)) {
     static discovery_packet_struct received_packet_data;
     
     // Copy the content of packet into the data structure
@@ -82,7 +86,7 @@ void receive_packet_callback(const void *data, uint16_t len, const linkaddr_t *s
 
     // Check if packet was a broadcast message
     if (received_packet_data.src_id != received_packet_data.dest_id) {
-      // return;
+      return;
     }
 
     int rssi = (signed short)packetbuf_attr(PACKETBUF_ATTR_RSSI);
@@ -92,13 +96,12 @@ void receive_packet_callback(const void *data, uint16_t len, const linkaddr_t *s
       received_packet_data.src_id, received_packet_data.dest_id, rssi,
       received_packet_data.timestamp / CLOCK_SECOND,
       ((received_packet_data.timestamp % CLOCK_SECOND)*1000) / CLOCK_SECOND);
-
+  
     // Based on node A timestamp
     printf("%lu DETECT %d", received_packet_data.timestamp / CLOCK_SECOND, received_packet_data.src_id);
 
     // check if there is good link quality
     if (rssi < -70) {
-      printf("Link quality was insufficient with rssi: %d\n", rssi);
       return;
     }
 
@@ -112,7 +115,7 @@ void receive_packet_callback(const void *data, uint16_t len, const linkaddr_t *s
     send_ack = 1; // Keep retrying if send on line below fails
     NETSTACK_NETWORK.output(&dest_addr); //Packet transmission
         
-  } else if (len == sizeof(data_packet_struct)) { // 88
+  } else if (len == sizeof(data_packet_struct)) {
     static data_packet_struct received_packet_data;
     
     // Copy the content of packet into the data structure
@@ -164,11 +167,6 @@ char listening_scheduler(struct rtimer *t, void *ptr) {
     for(i = 0; i < NUM_SEND; i++){
       // don't need to send any packets until received a discovery packet from node A
       if (send_ack) {
-        printf("SENDING ACK");  
-
-        // send pkt to node A to signal to it to start transferring stored readings
-        nullnet_buf = (uint8_t *)&discovery_pkt; //data transmitted
-        nullnet_len = sizeof(discovery_pkt); //length of data transmitted
         NETSTACK_NETWORK.output(&dest_addr); //Packet transmission
       }
 
@@ -193,6 +191,32 @@ char listening_scheduler(struct rtimer *t, void *ptr) {
   }
   
   PT_END(&pt);
+}
+
+static int get_motion_reading() {
+  int x = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_ACC_X);
+  int y = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_ACC_Y);
+  int z = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_ACC_Z);
+  
+  int rot_x = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_GYRO_X);
+  int rot_y = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_GYRO_Y);
+  int rot_z = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_GYRO_Z);
+
+  // Calculate magnitude of acceleration and rotation
+  int accel_magnitude = sqrt(x*x + y*y + z*z);
+  int gyro_magnitude = sqrt(rot_x*rot_x + rot_y*rot_y + rot_z*rot_z);
+  
+  // Aggregate accel and gyro magnutude into a single value
+  int motion_value = accel_magnitude + (gyro_magnitude / 100);
+  
+  printf("Motion reading: Accel=%d, Gyro=%d, Combined=%d\n", 
+    accel_magnitude, gyro_magnitude, motion_value);
+    
+  return motion_value;
+}
+
+static void init_mpu_reading(void) {
+  mpu_9250_sensor.configure(SENSORS_ACTIVE, MPU_9250_SENSOR_TYPE_ALL);
 }
 
 // Main thread that handles the neighbour discovery process
