@@ -27,8 +27,8 @@ linkaddr_t dest_addr;
 
 #define NUM_SEND 2
 
-// #define MAX_DATA_POINTS 60   // Collect 60 sets of readings
-#define MAX_DATA_POINTS 10   // Collect 10 sets of readings for testing
+#define MAX_DATA_POINTS 60   // Collect 60 sets of readings
+// #define MAX_DATA_POINTS 10   // Collect 10 sets of readings for testing
 
 /*---------------------------------------------------------------------------*/
 typedef struct {
@@ -72,8 +72,9 @@ AUTOSTART_PROCESSES(&nbr_discovery_process);
 // Function called after reception of a packet
 void receive_packet_callback(const void *data, uint16_t len, const linkaddr_t *src, const linkaddr_t *dest) 
 {
+  printf("RECEIVED PACKET SIZE: %d\n", len);
   // Check if the received packet size matches with what we expect it to be
-  if(len == sizeof(discovery_pkt)) {
+  if(len == sizeof(discovery_pkt)) { // 12
     static discovery_packet_struct received_packet_data;
     
     // Copy the content of packet into the data structure
@@ -97,6 +98,7 @@ void receive_packet_callback(const void *data, uint16_t len, const linkaddr_t *s
 
     // check if there is good link quality
     if (rssi < -70) {
+      printf("Link quality was insufficient with rssi: %d\n", rssi);
       return;
     }
 
@@ -110,7 +112,7 @@ void receive_packet_callback(const void *data, uint16_t len, const linkaddr_t *s
     send_ack = 1; // Keep retrying if send on line below fails
     NETSTACK_NETWORK.output(&dest_addr); //Packet transmission
         
-  } else if (len == sizeof(data_packet_struct)) {
+  } else if (len == sizeof(data_packet_struct)) { //488
     static data_packet_struct received_packet_data;
     
     // Copy the content of packet into the data structure
