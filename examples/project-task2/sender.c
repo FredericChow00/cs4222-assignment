@@ -59,6 +59,7 @@ static int motion_data[SEND_REPEATS * MAX_DATA_POINTS];
 // sender timer implemented using rtimer
 static struct rtimer rt;
 static struct etimer data_collection_timer;
+static struct etimer stationary_timer;
 
 // Protothread variable
 static struct pt pt;
@@ -74,6 +75,10 @@ unsigned long curr_timestamp;
 
 // Whether this data packet has been sent
 static int data_packet_sent;
+
+// Variables to ensure collection of sensor readings only occur after receive node is stationary for a minute
+bool not_stationary_for_a_min = true;
+int stationary_secs = 0;
 
 // Function prototypes for sensor reading
 static int get_light_reading(void);
@@ -263,6 +268,26 @@ PROCESS_THREAD(data_collection_process, ev, data) {
   static int data_count;
 
   PROCESS_BEGIN();
+
+  init_mpu_reading();
+
+  while (not_stationary_for_a_min) {
+    etimer_set(&stationary_timer, CLOCK_SECOND);
+    PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&stationary_timer));
+
+    int motion = get_motion_reading();
+
+    if (motion < 150) {
+      printf("stationary for %d s\n", stationary_secs+1);
+      stationary_secs ++;
+      if (stationary_secs == 60) {
+        not_stationary_for_a_min = false;
+      }
+    } else {
+      printf("movement detected, restart\n");
+      stationary_secs = 0;
+    }
+  }
   
   printf("discovery size: %d\n", sizeof(discovery_pkt));
   printf("discovery size: %d\n", sizeof(discovery_packet_struct));
@@ -271,7 +296,7 @@ PROCESS_THREAD(data_collection_process, ev, data) {
   while (1) {
     // Initialize sensors
     init_opt_reading();
-    init_mpu_reading();
+    // init_mpu_reading();
     data_count = 0;
     
     printf("Starting data collection: %d readings at 1 per second\n", SEND_REPEATS * MAX_DATA_POINTS);

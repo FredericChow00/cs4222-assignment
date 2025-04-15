@@ -13,6 +13,7 @@
 #include <stdio.h> 
 #include "node-id.h"
 #include "board-peripherals.h"
+#include <math.h>
 
 // Identification information of the node
 
@@ -58,6 +59,7 @@ static int data_idx;
 
 // sender timer implemented using rtimer
 static struct rtimer rt;
+static struct etimer stationary_timer;
 
 // Protothread variable
 static struct pt pt;
@@ -71,6 +73,10 @@ unsigned long curr_timestamp;
 // Whether node B should be sending ACK discovery packets
 static int send_ack = 0;
 
+// Variables to ensure collection of sensor readings only occur after receive node is stationary for a minute
+bool not_stationary_for_a_min = true;
+int stationary_secs = 0;
+
 static int get_motion_reading(void);
 static void init_mpu_reading(void);
 
@@ -81,14 +87,8 @@ AUTOSTART_PROCESSES(&nbr_discovery_process);
 // Function called after reception of a packet
 void receive_packet_callback(const void *data, uint16_t len, const linkaddr_t *src, const linkaddr_t *dest) 
 {
-<<<<<<< HEAD
-  printf("Size of discovery pkt: %d", len);
-  // Check if the received packet size matches with what we expect it to be
-  if(len == sizeof(discovery_pkt)) {
-=======
   // Check if the received packet size matches with what we expect it to be
   if(len == sizeof(discovery_pkt) && send_ack == 0) { //12
->>>>>>> a5ccc926e21d5ef68f138fe5c2ef4939e80d6d15
     static discovery_packet_struct received_packet_data;
     
     // Copy the content of packet into the data structure
@@ -187,13 +187,10 @@ char listening_scheduler(struct rtimer *t, void *ptr) {
     for(i = 0; i < NUM_SEND; i++){
       // don't need to send any packets until received a discovery packet from node A
       if (send_ack) {
-<<<<<<< HEAD
-=======
         printf("SENDING ACK");  
         // send pkt to node A to signal to it to start transferring stored readings
         nullnet_buf = (uint8_t *)&discovery_pkt; //data transmitted
         nullnet_len = sizeof(discovery_pkt); //length of data transmitted
->>>>>>> a5ccc926e21d5ef68f138fe5c2ef4939e80d6d15
         NETSTACK_NETWORK.output(&dest_addr); //Packet transmission
       }
 
@@ -253,6 +250,26 @@ PROCESS_THREAD(nbr_discovery_process, ev, data)
  // static struct etimer periodic_timer;
 
   PROCESS_BEGIN();
+
+  init_mpu_reading();
+
+  while (not_stationary_for_a_min) {
+    etimer_set(&stationary_timer, CLOCK_SECOND);
+    PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&stationary_timer));
+
+    int motion = get_motion_reading();
+
+    if (motion < 150) {
+      printf("stationary for %d s\n", stationary_secs+1);
+      stationary_secs ++;
+      if (stationary_secs == 60) {
+        not_stationary_for_a_min = false;
+      }
+    } else {
+      printf("movement detected, restart\n");
+      stationary_secs = 0;
+    }
+  }
 
   // initialize data packet sent for neighbour discovery exchange
   discovery_pkt.src_id = node_id; //Initialize the node ID
