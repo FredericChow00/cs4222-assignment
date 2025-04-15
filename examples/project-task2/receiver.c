@@ -19,7 +19,7 @@
 // Configures the wake-up timer for neighbour discovery 
 #define WAKE_TIME RTIMER_SECOND/22    // 10 HZ, 0.1s
 
-#define SLEEP_CYCLE  11 - 1        	      // 0 for never sleep
+#define SLEEP_CYCLE  11 - 1
 #define SLEEP_SLOT WAKE_TIME   // sleep slot should not be too large to prevent overflow
 
 // For neighbour discovery, we would like to send message to everyone. We use Broadcast address:
@@ -71,14 +71,13 @@ AUTOSTART_PROCESSES(&nbr_discovery_process);
 // Function called after reception of a packet
 void receive_packet_callback(const void *data, uint16_t len, const linkaddr_t *src, const linkaddr_t *dest) 
 {
+  // Check if the received packet size matches with what we expect it to be
   if(len == sizeof(data_packet)) {
-
     static data_packet_struct received_packet_data;
     
     // Copy the content of packet into the data structure
     memcpy(&received_packet_data, data, len);
     
-
     // Print the details of the received packet
     // printf("recv %lu rssi %d at: %3lu.%03lu\n",
     //     received_packet_data.count, (signed short)packetbuf_attr(PACKETBUF_ATTR_RSSI),
@@ -130,7 +129,7 @@ char sender_scheduler(struct rtimer *t, void *ptr) {
     // send NUM_SEND number of neighbour discovery beacon packets
     for(i = 0; i < NUM_SEND; i++){
 
-       // Initialize the nullnet module with information of packet to be trasnmitted
+       // Initialize the nullnet module with information of packet to be transmitted
       nullnet_buf = (uint8_t *)&data_packet; //data transmitted
       nullnet_len = sizeof(data_packet); //length of data transmitted
       
@@ -155,25 +154,13 @@ char sender_scheduler(struct rtimer *t, void *ptr) {
    
     }
 
-    // sleep for a random number of slots
-    if(SLEEP_CYCLE != 0){
-    
-      // radio off
-      NETSTACK_RADIO.off();
+    // sleep for a fixed number of slots
+    // radio off
+    NETSTACK_RADIO.off();
 
-      // SLEEP_SLOT cannot be too large as value will overflow,
-      // to have a large sleep interval, sleep many times instead
-
-      // get a value that is uniformly distributed between 0 and 2*SLEEP_CYCLE
-      // the average is SLEEP_CYCLE 
-      NumSleep = SLEEP_CYCLE;  
-      //printf(" Sleep for %d slots \n",NumSleep);
-
-      // NumSleep should be a constant or static int
-      rtimer_set(t, RTIMER_TIME(t) + SLEEP_SLOT * SLEEP_CYCLE, 1, (rtimer_callback_t)sender_scheduler, ptr);
-      PT_YIELD(&pt);
-
-    }
+    // (SLEEP_SLOT = 65536 / 22) * (SLEEP_CYCLE = 11 - 1) <= 2147483647 so it won't overflow
+    rtimer_set(t, RTIMER_TIME(t) + SLEEP_SLOT * SLEEP_CYCLE, 1, (rtimer_callback_t)sender_scheduler, ptr);
+    PT_YIELD(&pt);
   }
   
   PT_END(&pt);

@@ -21,7 +21,7 @@
 // Configures the wake-up timer for neighbour discovery 
 #define WAKE_TIME RTIMER_SECOND/22    // 10 HZ, 0.1s
 
-#define SLEEP_CYCLE  9 - 1        	      // 0 for never sleep
+#define SLEEP_CYCLE  9 - 1
 #define SLEEP_SLOT WAKE_TIME   // sleep slot should not be too large to prevent overflow
 
 // #define MAX_DATA_POINTS 60   // Collect 60 sets of readings
@@ -81,18 +81,12 @@ AUTOSTART_PROCESSES(&data_collection_process);
 // Function called after reception of a packet
 void receive_packet_callback(const void *data, uint16_t len, const linkaddr_t *src, const linkaddr_t *dest) 
 {
-
-
   // Check if the received packet size matches with what we expect it to be
-
   if(len == sizeof(discovery_pkt)) {
-
- 
     static data_packet_struct received_packet_data;
     
     // Copy the content of packet into the data structure
     memcpy(&received_packet_data, data, len);
-    
 
     // Print the details of the received packet
     printf("recv data from node id: %lu, with rssi %d at: %3lu.%03lu\n",
@@ -144,7 +138,7 @@ char sender_scheduler(struct rtimer *t, void *ptr) {
     // send NUM_SEND number of neighbour discovery beacon packets
     for(i = 0; i < NUM_SEND; i++){
 
-      // Initialize the nullnet module with information of packet to be trasnmitted
+      // Initialize the nullnet module with information of packet to be transmitted
       nullnet_buf = (uint8_t *)&discovery_pkt; //data transmitted
       nullnet_len = sizeof(discovery_pkt); //length of data transmitted
             
@@ -170,25 +164,13 @@ char sender_scheduler(struct rtimer *t, void *ptr) {
    
     }
 
-    // sleep for a random number of slots
-    if(SLEEP_CYCLE != 0){
-    
-      // radio off
-      NETSTACK_RADIO.off();
+    // sleep for a fixed number of slots
+    // radio off
+    NETSTACK_RADIO.off();
 
-      // SLEEP_SLOT cannot be too large as value will overflow,
-      // to have a large sleep interval, sleep many times instead
-
-      // get a value that is uniformly distributed between 0 and 2*SLEEP_CYCLE
-      // the average is SLEEP_CYCLE 
-      NumSleep = SLEEP_CYCLE;  
-      //printf(" Sleep for %d slots \n",NumSleep);
-
-      // NumSleep should be a constant or static int
-      rtimer_set(t, RTIMER_TIME(t) + SLEEP_SLOT * SLEEP_CYCLE, 1, (rtimer_callback_t)sender_scheduler, ptr);
-      PT_YIELD(&pt);
-
-    }
+    // (SLEEP_SLOT = 65536 / 22) * (SLEEP_CYCLE = 9 - 1) <= 2147483647 so it won't overflow
+    rtimer_set(t, RTIMER_TIME(t) + SLEEP_SLOT * SLEEP_CYCLE, 1, (rtimer_callback_t)sender_scheduler, ptr);
+    PT_YIELD(&pt);
   }
   
   PT_END(&pt);
@@ -296,15 +278,11 @@ PROCESS_THREAD(nbr_discovery_process, ev, data)
   nullnet_set_input_callback(receive_packet_callback); //initialize receiver callback
   linkaddr_copy(&dest_addr, &linkaddr_null);
 
-
-
   printf("CC2650 neighbour discovery\n");
   printf("Node %d will be sending packet of size %d Bytes\n", node_id, (int)sizeof(data_packet_struct));
 
   // Start sender in one millisecond.
   rtimer_set(&rt, RTIMER_NOW() + (RTIMER_SECOND / 1000), 1, (rtimer_callback_t)sender_scheduler, NULL);
-
-  
 
   PROCESS_END();
 }
