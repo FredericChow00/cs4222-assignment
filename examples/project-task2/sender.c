@@ -24,15 +24,15 @@
 #define SLEEP_CYCLE  9 - 1
 #define SLEEP_SLOT WAKE_TIME   // sleep slot should not be too large to prevent overflow
 
-// #define MAX_DATA_POINTS 60   // Collect 60 sets of readings
-#define MAX_DATA_POINTS 10  // Collect 10 sets of readings for testing
+#define MAX_DATA_POINTS 10   // Collect 10 sets of readings
+#define SEND_REPEATS 6
 
 // For neighbour discovery, we would like to send message to everyone. We use Broadcast address:
 linkaddr_t dest_addr;
 
 #define NUM_SEND 2
 
-#define MOTION_THRESHOLD 500 
+#define MOTION_THRESHOLD 500
 /*---------------------------------------------------------------------------*/
 typedef struct {
   unsigned long src_id;
@@ -48,6 +48,9 @@ typedef struct {
   int motion_data[MAX_DATA_POINTS]; // Fixed size array of MAX_DATA_POINTS
 
 } data_packet_struct;
+
+static int light_data[SEND_REPEATS * MAX_DATA_POINTS];
+static int motion_data[SEND_REPEATS * MAX_DATA_POINTS];
 
 /*---------------------------------------------------------------------------*/
 // duty cycle = WAKE_TIME / (WAKE_TIME + SLEEP_SLOT * SLEEP_CYCLE)
@@ -88,7 +91,7 @@ AUTOSTART_PROCESSES(&data_collection_process);
 void receive_packet_callback(const void *data, uint16_t len, const linkaddr_t *src, const linkaddr_t *dest) 
 {
   // Check if the received packet size matches with what we expect it to be
-  if(len == sizeof(discovery_pkt)) {
+  if(len == sizeof(discovery_pkt) && data_packet_sent == 0) {
     static discovery_packet_struct received_packet_data;
     
     // Copy the content of packet into the data structure
@@ -126,8 +129,19 @@ void receive_packet_callback(const void *data, uint16_t len, const linkaddr_t *s
     nullnet_buf = (uint8_t *)&data_packet; //data transmitted
     nullnet_len = sizeof(data_packet); //length of data transmitted
     printf("%lu TRANSFER %lu RSSI: %d", curr_timestamp, data_packet.dest_id, rssi);
-    NETSTACK_NETWORK.output(&dest_addr); //Packet transmission
+
+    //Packet transmissions, split into SEND_REPEATS number of sends
+    for (int repeat = 0; repeat < SEND_REPEATS; repeat++) {
+      for (int count = 0; count < MAX_DATA_POINTS; count++) {
+        data_packet.light_data[count] = light_data[repeat * MAX_DATA_POINTS + count];
+        data_packet.motion_data[count] = motion_data[repeat * MAX_DATA_POINTS + count];
+      }
+
+      NETSTACK_NETWORK.output(&dest_addr);
+    }
+
     data_packet_sent = 1;
+    NETSTACK_RADIO.off();
   }
 
 }
@@ -171,6 +185,9 @@ char sender_scheduler(struct rtimer *t, void *ptr) {
         rtimer_set(t, RTIMER_TIME(t) + WAKE_TIME, 1, (rtimer_callback_t)sender_scheduler, ptr);
         PT_YIELD(&pt);
       }
+      if (data_packet_sent) {
+        break;
+      }
     }
 
     if (data_packet_sent) {
@@ -189,7 +206,8 @@ char sender_scheduler(struct rtimer *t, void *ptr) {
       break;
     }
   }
-  
+  process_poll(&data_collection_process);
+
   PT_END(&pt);
 }
 
@@ -242,7 +260,7 @@ static void init_mpu_reading(void) {
 
 // Data collection process
 PROCESS_THREAD(data_collection_process, ev, data) {
-  static int data_count = 0;
+  static int data_count;
 
   PROCESS_BEGIN();
   
@@ -254,9 +272,10 @@ PROCESS_THREAD(data_collection_process, ev, data) {
     // Initialize sensors
     init_opt_reading();
     init_mpu_reading();
+    data_count = 0;
     
-    printf("Starting data collection: %d readings at 1 per second\n", MAX_DATA_POINTS);
-
+    printf("Starting data collection: %d readings at 1 per second\n", SEND_REPEATS * MAX_DATA_POINTS);
+    
     int motion = 0;
 
     // Block here until motion > MOTION_THRESHOLD
@@ -266,17 +285,17 @@ PROCESS_THREAD(data_collection_process, ev, data) {
     };
 
     // Collect data points at 1 second intervals
-    while(data_count < MAX_DATA_POINTS) {
+    while(data_count < SEND_REPEATS * MAX_DATA_POINTS) {
       etimer_set(&data_collection_timer, CLOCK_SECOND);
       PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&data_collection_timer));
       
       // Get sensor readings
       int light = get_light_reading();
       motion = get_motion_reading();
-
+      
       // Store in the data packet
-      data_packet.light_data[data_count] = light;
-      data_packet.motion_data[data_count] = motion;
+      light_data[data_count] = light;
+      motion_data[data_count] = motion;
       
       printf("Collected data point %d: Light=%d, Motion=%d\n", data_count, light, motion);
         
@@ -299,7 +318,7 @@ PROCESS_THREAD(data_collection_process, ev, data) {
 
     // Start sender in one millisecond.
     rtimer_set(&rt, RTIMER_NOW() + (RTIMER_SECOND / 1000), 1, (rtimer_callback_t)sender_scheduler, NULL);
-    break;
+    PROCESS_WAIT_EVENT_UNTIL(ev == PROCESS_EVENT_POLL);
   }
 
   PROCESS_END();
