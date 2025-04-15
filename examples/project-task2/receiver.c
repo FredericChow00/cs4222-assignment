@@ -97,6 +97,8 @@ void receive_packet_callback(const void *data, uint16_t len, const linkaddr_t *s
     if (rssi >= -70) {
       printf("Good link quality established with rssi: %d\n", rssi);
       // send pkt to node A to signal to it to start transferring stored readings
+      
+      NETSTACK_NETWORK.output(&dest_addr); //Packet transmission
 
     } 
         

@@ -100,11 +100,26 @@ void receive_packet_callback(const void *data, uint16_t len, const linkaddr_t *s
         (signed short)packetbuf_attr(PACKETBUF_ATTR_RSSI),
         received_packet_data.timestamp / CLOCK_SECOND,
         ((received_packet_data.timestamp % CLOCK_SECOND)*1000) / CLOCK_SECOND);
- 
+    
+    send_data_packets(NULL, NULL);
   }
 
 }
 
+void send_data_packets(struct rtimer *t, void *ptr) {
+  data_packet.timestamp = clock_time();
+  
+  nullnet_buf = (uint8_t *)&data_packet; //data transmitted
+  nullnet_len = sizeof(data_packet); //length of data transmitted
+
+  NETSTACK_NETWORK.output(&dest_addr); //Packet transmission
+  printf("sent data packet \n");
+  // clear all data
+  data_packet.data_count = 0;
+  
+  process_start(&nbr_discovery_process, NULL);
+
+}
 // Scheduler function for the sender of neighbour discovery packets
 char sender_scheduler(struct rtimer *t, void *ptr) {
  
