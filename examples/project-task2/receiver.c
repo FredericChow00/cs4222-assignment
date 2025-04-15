@@ -33,6 +33,9 @@ linkaddr_t dest_addr;
 #define MAX_DATA_POINTS 10   // Collect 10 sets of readings
 #define SEND_REPEATS 6
 
+#define SIGNIFICANT_MOTION 150
+#define MINUTE 60
+
 /*---------------------------------------------------------------------------*/
 typedef struct {
   unsigned long src_id;
@@ -259,10 +262,10 @@ PROCESS_THREAD(nbr_discovery_process, ev, data)
 
     int motion = get_motion_reading();
 
-    if (motion < 150) {
+    if (motion < SIGNIFICANT_MOTION) {
       printf("stationary for %d s\n", stationary_secs+1);
       stationary_secs ++;
-      if (stationary_secs == 60) {
+      if (stationary_secs == MINUTE) {
         not_stationary_for_a_min = false;
       }
     } else {

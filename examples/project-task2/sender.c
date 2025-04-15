@@ -33,6 +33,9 @@ linkaddr_t dest_addr;
 #define NUM_SEND 2
 
 #define MOTION_THRESHOLD 500
+
+#define SIGNIFICANT_MOTION 150
+#define MINUTE 60
 /*---------------------------------------------------------------------------*/
 typedef struct {
   unsigned long src_id;
@@ -277,10 +280,10 @@ PROCESS_THREAD(data_collection_process, ev, data) {
 
     int motion = get_motion_reading();
 
-    if (motion < 150) {
+    if (motion < SIGNIFICANT_MOTION) {
       printf("stationary for %d s\n", stationary_secs+1);
       stationary_secs ++;
-      if (stationary_secs == 60) {
+      if (stationary_secs == MINUTE) {
         not_stationary_for_a_min = false;
       }
     } else {
