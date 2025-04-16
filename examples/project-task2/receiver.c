@@ -26,29 +26,29 @@
 
 // For neighbour discovery, we would like to send message to everyone. We use Broadcast address:
 linkaddr_t dest_addr;
+linkaddr_t ack_dest_addr;
 
 #define NUM_SEND 2
 
-// #define MAX_DATA_POINTS 60   // Collect 60 sets of readings
-#define MAX_DATA_POINTS 10   // Collect 10 sets of readings
-#define SEND_REPEATS 6
+#define MAX_DATA_POINTS 12   // Collect 10 sets of readings
+#define SEND_REPEATS 5
 
 #define SIGNIFICANT_MOTION 150
 #define MINUTE 60
 
 /*---------------------------------------------------------------------------*/
 typedef struct {
-  unsigned long src_id;
-  unsigned long dest_id;
-  unsigned long timestamp;
+  uint16_t src_id; // uint16_t according to Contiki docs
+  uint16_t dest_id;
+  clock_time_t timestamp;
   
 } discovery_packet_struct;
 
 typedef struct {
-  unsigned long src_id;
-  unsigned long dest_id;
-  int light_data[MAX_DATA_POINTS]; // Fixed size array of MAX_DATA_POINTS
-  int motion_data[MAX_DATA_POINTS]; // Fixed size array of MAX_DATA_POINTS
+  uint16_t src_id;
+  uint16_t dest_id;
+  uint16_t light_data[MAX_DATA_POINTS]; // Fixed size array of MAX_DATA_POINTS
+  uint16_t motion_data[MAX_DATA_POINTS]; // Fixed size array of MAX_DATA_POINTS
 
 } data_packet_struct;
 
@@ -66,103 +66,121 @@ static struct etimer stationary_timer;
 
 // Protothread variable
 static struct pt pt;
+static struct pt pt_rcv;
 
 // Structure holding data for discovery process
 static discovery_packet_struct discovery_pkt;
 
 // Current time stamp of the node
-unsigned long curr_timestamp;
+clock_time_t curr_timestamp;
 
-// Whether node B should be sending ACK discovery packets
-static int send_ack = 0;
+// Number of ACK discovery packets send attempts left
+static int ack_num_tries_left = 0;
 
 // Variables to ensure collection of sensor readings only occur after receive node is stationary for a minute
 bool not_stationary_for_a_min = true;
 int stationary_secs = 0;
 
+// Function prototypes
 static int get_motion_reading(void);
 static void init_mpu_reading(void);
+void receive_packet_callback(const void*, uint16_t, const linkaddr_t*, const linkaddr_t*);
+char listening_scheduler(struct rtimer*, void *);
 
 // Starts the main contiki neighbour discovery process
 PROCESS(nbr_discovery_process, "cc2650 neighbour discovery process");
 AUTOSTART_PROCESSES(&nbr_discovery_process);
 
+void receive_packet_return(struct rtimer *t, void *ptr) {
+  PT_SCHEDULE(receive_packet_callback);
+}
+
 // Function called after reception of a packet
 void receive_packet_callback(const void *data, uint16_t len, const linkaddr_t *src, const linkaddr_t *dest) 
 {
+  static discovery_packet_struct received_discovery;
+  static data_packet_struct received_data;
+  static int rssi;
+  static int count;
+  static int data_count;
+
+  // Begin the protothread
+  PT_BEGIN(&pt_rcv);
+
   // Check if the received packet size matches with what we expect it to be
-  if(len == sizeof(discovery_pkt) && send_ack == 0) { //12
-    static discovery_packet_struct received_packet_data;
-    
+  if(len == sizeof(discovery_pkt)) { //12
     // Copy the content of packet into the data structure
-    memcpy(&received_packet_data, data, len);
+    memcpy(&received_discovery, data, len);
 
-    // Check if packet was a broadcast message
-    if (received_packet_data.src_id != received_packet_data.dest_id) {
-      return;
-    }
+    rssi = (signed short)packetbuf_attr(PACKETBUF_ATTR_RSSI);
 
-    int rssi = (signed short)packetbuf_attr(PACKETBUF_ATTR_RSSI);
-    
     // Print the details of the received packet
-    printf("src: %lu, dest: %lu, rssi: %d, at time: %3lu.%03lu\n",
-      received_packet_data.src_id, received_packet_data.dest_id, rssi,
-      received_packet_data.timestamp / CLOCK_SECOND,
-      ((received_packet_data.timestamp % CLOCK_SECOND)*1000) / CLOCK_SECOND);
-  
-    // Based on node A timestamp
-    printf("%lu DETECT %d", received_packet_data.timestamp / CLOCK_SECOND, received_packet_data.src_id);
+    printf("src: %u, dest: %u, rssi: %d, at time: %3lu.%03lu\n",
+      received_discovery.src_id, received_discovery.dest_id, rssi,
+      received_discovery.timestamp / CLOCK_SECOND,
+      ((received_discovery.timestamp % CLOCK_SECOND)*1000) / CLOCK_SECOND);
+    
+    // printf("ACK LEFT: %d\n", ack_num_tries_left);
 
-    // check if there is good link quality
-    if (rssi < -70) {
-      return;
+    // Packet was a broadcast message, and no ACK tries left
+    if (received_discovery.src_id == received_discovery.dest_id && ack_num_tries_left <= 0) { 
+      // Based on node A timestamp
+      printf("%lu DETECT %d\n", received_discovery.timestamp / CLOCK_SECOND, received_discovery.src_id);
+
+      // check if there is good link quality
+      if (rssi >= -70) {
+        // Send pkt to node A to signal to it to start transferring stored readings
+        nullnet_buf = (uint8_t *)&discovery_pkt; //data transmitted
+        nullnet_len = sizeof(discovery_pkt); //length of data transmitted
+        discovery_pkt.dest_id = received_discovery.src_id;
+        discovery_pkt.timestamp = clock_time();
+        linkaddr_copy(&ack_dest_addr, src);
+        ack_num_tries_left = SLEEP_CYCLE; // If node B did not receive within SLEEP_CYCLE, node A has disconnected
+      }
+
+    } else if (received_discovery.dest_id == node_id) { // Received ACK packet
+      ack_num_tries_left = 0; // Reset to no longer send
+      data_idx = 0;
+
+      rt.func = receive_packet_return; // Stop callback to sender_scheduler()
+      rtimer_run_next(); // Run callback to ensure no interruption from rtimer
+      rtimer_set(&rt, RTIMER_NOW() + RTIMER_SECOND * 1.5, 1, (rtimer_callback_t)listening_scheduler, NULL); // Sufficient time to receive data packet
     }
 
-    printf("Good link quality established with rssi: %d\n", rssi);
-
-    // send pkt to node A to signal to it to start transferring stored readings
-    nullnet_buf = (uint8_t *)&discovery_pkt; //data transmitted
-    nullnet_len = sizeof(discovery_pkt); //length of data transmitted
-    discovery_pkt.dest_id = received_packet_data.src_id;
-    discovery_pkt.timestamp = clock_time();
-    send_ack = 1; // Keep retrying if send on line below fails
-    data_idx = 0;
-    NETSTACK_NETWORK.output(&dest_addr); //Packet transmission
-        
-  } else if (len == sizeof(data_packet_struct)) {
-    static data_packet_struct received_packet_data;
-    
+  } else if (len == sizeof(data_packet_struct)) {    
     // Copy the content of packet into the data structure
-    memcpy(&received_packet_data, data, len);
+    memcpy(&received_data, data, len);
 
     // Check if packet was sent to this node
-    if (received_packet_data.dest_id != node_id) {
-      return;
-    }
+    if (received_data.dest_id == node_id) {
 
-    //Packets received, split into SEND_REPEATS number of sends
-    for (int count = 0; count < MAX_DATA_POINTS; count++) {
-      light_data[data_idx++] = received_packet_data.light_data[count];
-      motion_data[data_idx++] = received_packet_data.motion_data[count];
-    }
+      // printf("Received %d data points\n", MAX_DATA_POINTS);
 
-    printf("Received %d data points\n", MAX_DATA_POINTS);
-
-    if (data_idx == SEND_REPEATS * MAX_DATA_POINTS) { // Received all packets
-      send_ack = 0; // Reset to no longer send
-  
-      printf("Light: %d", received_packet_data.light_data[0]);
-      for (int data_count = 1; data_count < SEND_REPEATS * MAX_DATA_POINTS; data_count++) {
-        printf(", %d", received_packet_data.light_data[data_count]);
+      //Packets received, split into SEND_REPEATS number of sends
+      for (count = 0; count < MAX_DATA_POINTS; count++) {
+        light_data[data_idx] = received_data.light_data[count];
+        motion_data[data_idx++] = received_data.motion_data[count];
       }
-  
-      printf("\nMotion: %d", received_packet_data.motion_data[0]);
-      for (int data_count = 1; data_count < SEND_REPEATS * MAX_DATA_POINTS; data_count++) {
-        printf(", %d", received_packet_data.light_data[data_count]);
+
+      if (data_idx == SEND_REPEATS * MAX_DATA_POINTS) { // Received all packets
+        printf("Light: %u", light_data[0]);
+        for (data_count = 1; data_count < SEND_REPEATS * MAX_DATA_POINTS; data_count++) {
+          printf(", %u", light_data[data_count]);
+        }
+    
+        printf("\nMotion: %u", motion_data[0]);
+        for (data_count = 1; data_count < SEND_REPEATS * MAX_DATA_POINTS; data_count++) {
+          printf(", %u", motion_data[data_count]);
+        }
+        printf("\n");
+
+        rtimer_set(&rt, RTIMER_NOW() + (RTIMER_SECOND / 1000), 1, (rtimer_callback_t)listening_scheduler, NULL); 
       }
-      printf("\n");
+
+      // printf("OUT\n");
     }
   }
+  PT_END(&pt_rcv);
 }
 
 // Scheduler function for the listening of neighbour discovery packets
@@ -170,51 +188,34 @@ char listening_scheduler(struct rtimer *t, void *ptr) {
  
   static uint16_t i = 0;
   
-  static int NumSleep=0;
- 
   // Begin the protothread
   PT_BEGIN(&pt);
 
   // Get the current time stamp
   curr_timestamp = clock_time();
 
-  printf("Start clock %lu ticks, timestamp %3lu.%03lu\n", curr_timestamp, curr_timestamp / CLOCK_SECOND, 
-  ((curr_timestamp % CLOCK_SECOND)*1000) / CLOCK_SECOND);
+  // printf("Start clock %lu ticks, timestamp %3lu.%03lu\n", curr_timestamp, curr_timestamp / CLOCK_SECOND, 
+  // ((curr_timestamp % CLOCK_SECOND)*1000) / CLOCK_SECOND);
 
   while(1){
+    // printf("LISTENING");
+    if (ack_num_tries_left > 0) { // Send pkt to node A to signal to it to start transferring stored readings
+      ack_num_tries_left--;
+      NETSTACK_NETWORK.output(&ack_dest_addr); //Packet transmission
+  
+      rtimer_set(&rt, RTIMER_TIME(t) + WAKE_TIME, 1, (rtimer_callback_t)listening_scheduler, NULL);
+      PT_YIELD(&pt);
 
-    // radio on
-    NETSTACK_RADIO.on();
-
-    // send NUM_SEND number of neighbour discovery beacon packets
-    for(i = 0; i < NUM_SEND; i++){
-      // don't need to send any packets until received a discovery packet from node A
-      if (send_ack) {
-        printf("SENDING ACK");  
-        // send pkt to node A to signal to it to start transferring stored readings
-        nullnet_buf = (uint8_t *)&discovery_pkt; //data transmitted
-        nullnet_len = sizeof(discovery_pkt); //length of data transmitted
-        NETSTACK_NETWORK.output(&dest_addr); //Packet transmission
-      }
-
-      // wait for WAKE_TIME before sending the next packet
-      if(i != (NUM_SEND - 1)){
-        rtimer_set(t, RTIMER_TIME(t) + WAKE_TIME, 1, (rtimer_callback_t)listening_scheduler, ptr);
-        PT_YIELD(&pt);
-      }
-    }
-
-    // sleep for a fixed number of slots
-    if (!send_ack) { // Remain on if attempting to receive from node A
-      // radio off
+    } else { // Don't need to send any packets until received a discovery packet from node A
       NETSTACK_RADIO.off();
-    }
+      // (SLEEP_SLOT = 65536 / 22) * (SLEEP_CYCLE = 11 - 1) <= 2147483647 so it won't overflow
+      rtimer_set(&rt, RTIMER_TIME(t) + SLEEP_SLOT * SLEEP_CYCLE, 1, (rtimer_callback_t)listening_scheduler, NULL);
+      PT_YIELD(&pt);
 
-    // (SLEEP_SLOT = 65536 / 22) * (SLEEP_CYCLE = 11 - 1) <= 2147483647 so it won't overflow
-    rtimer_set(t, RTIMER_TIME(t) + SLEEP_SLOT * SLEEP_CYCLE, 1, (rtimer_callback_t)listening_scheduler, ptr);
-    PT_YIELD(&pt);
-    
-    // send_ack = 0; // Reset to no longer send (since node A cycle < node B cycle, if node B did not receive by now, node A has disconnected
+      NETSTACK_RADIO.on(); // on() is at bottom to ensure radio is on for the next loop
+      rtimer_set(&rt, RTIMER_TIME(t) + WAKE_TIME, 1, (rtimer_callback_t)listening_scheduler, NULL);
+      PT_YIELD(&pt);
+    }
   }
   
   PT_END(&pt);
@@ -256,23 +257,23 @@ PROCESS_THREAD(nbr_discovery_process, ev, data)
 
   init_mpu_reading();
 
-  while (not_stationary_for_a_min) {
-    etimer_set(&stationary_timer, CLOCK_SECOND);
-    PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&stationary_timer));
+  // while (not_stationary_for_a_min) {
+  //   etimer_set(&stationary_timer, CLOCK_SECOND);
+  //   PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&stationary_timer));
 
-    int motion = get_motion_reading();
+  //   int motion = get_motion_reading();
 
-    if (motion < SIGNIFICANT_MOTION) {
-      printf("stationary for %d s\n", stationary_secs+1);
-      stationary_secs ++;
-      if (stationary_secs == MINUTE) {
-        not_stationary_for_a_min = false;
-      }
-    } else {
-      printf("movement detected, restart\n");
-      stationary_secs = 0;
-    }
-  }
+  //   if (motion < SIGNIFICANT_MOTION) {
+  //     printf("stationary for %d s\n", stationary_secs+1);
+  //     stationary_secs ++;
+  //     if (stationary_secs == MINUTE) {
+  //       not_stationary_for_a_min = false;
+  //     }
+  //   } else {
+  //     printf("movement detected, restart\n");
+  //     stationary_secs = 0;
+  //   }
+  // }
 
   // initialize data packet sent for neighbour discovery exchange
   discovery_pkt.src_id = node_id; //Initialize the node ID
@@ -281,7 +282,7 @@ PROCESS_THREAD(nbr_discovery_process, ev, data)
   linkaddr_copy(&dest_addr, &linkaddr_null);
 
   printf("CC2650 neighbour discovery\n");
-  printf("Node %d will be sending discovery packets of size %d Bytes\n", node_id, (int)sizeof(discovery_packet_struct));
+  printf("Node %d will be receiving discovery packets of size %d Bytes\n", node_id, (int)sizeof(discovery_packet_struct));
 
   // Start sender in one millisecond.
   rtimer_set(&rt, RTIMER_NOW() + (RTIMER_SECOND / 1000), 1, (rtimer_callback_t)listening_scheduler, NULL);
