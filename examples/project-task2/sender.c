@@ -38,7 +38,7 @@ linkaddr_t dest_addr;
 #define MINUTE 60
 /*---------------------------------------------------------------------------*/
 typedef struct {
-  uint16_t src_id; // uint16_t according to Contiki docs
+  uint16_t src_id; // uint16_t according to Contiki source code
   uint16_t dest_id;
   clock_time_t timestamp;
   
@@ -75,14 +75,14 @@ static data_packet_struct data_packet;
 static discovery_packet_struct discovery_packet;
 
 // Current time stamp of the node
-clock_time_t curr_timestamp;
+static clock_time_t curr_timestamp;
 
 // Whether this data packet has been sent
 static int data_packet_sent;
 
 // Variables to ensure collection of sensor readings only occur after receive node is stationary for a minute
-bool not_stationary_for_a_min = true;
-int stationary_secs = 0;
+static bool not_stationary_for_a_min = true;
+static int stationary_secs = 0;
 
 // Function prototypes
 static uint16_t get_light_reading(void);
@@ -318,14 +318,16 @@ PROCESS_THREAD(data_collection_process, ev, data) {
     motion = 0;
 
     // Block here until motion > MOTION_THRESHOLD
+    // printf("Waiting for significant motion...");
     // while (motion < MOTION_THRESHOLD) {
-    //   printf("Waiting for significant motion...");
+    //   etimer_set(&data_collection_timer, CLOCK_SECOND / 4);
+    //   PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&data_collection_timer));
     //   motion = get_motion_reading();
     // };
 
     // Collect data points at 1 second intervals
     while(data_count < SEND_REPEATS * MAX_DATA_POINTS) {
-      etimer_set(&data_collection_timer, CLOCK_SECOND / 4);
+      etimer_set(&data_collection_timer, CLOCK_SECOND);
       PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&data_collection_timer));
       
       // Get sensor readings

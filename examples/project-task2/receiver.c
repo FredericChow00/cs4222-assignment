@@ -38,7 +38,7 @@ linkaddr_t ack_dest_addr;
 
 /*---------------------------------------------------------------------------*/
 typedef struct {
-  uint16_t src_id; // uint16_t according to Contiki docs
+  uint16_t src_id; // uint16_t according to Contiki source code
   uint16_t dest_id;
   clock_time_t timestamp;
   
@@ -72,14 +72,14 @@ static struct pt pt_rcv;
 static discovery_packet_struct discovery_pkt;
 
 // Current time stamp of the node
-clock_time_t curr_timestamp;
+static clock_time_t curr_timestamp;
 
 // Number of ACK discovery packets send attempts left
 static int ack_num_tries_left = 0;
 
 // Variables to ensure collection of sensor readings only occur after receive node is stationary for a minute
-bool not_stationary_for_a_min = true;
-int stationary_secs = 0;
+static bool not_stationary_for_a_min = true;
+static int stationary_secs = 0;
 
 // Function prototypes
 static int get_motion_reading(void);
@@ -248,10 +248,7 @@ static void init_mpu_reading(void) {
 }
 
 // Main thread that handles the neighbour discovery process
-PROCESS_THREAD(nbr_discovery_process, ev, data)
-{
-
- // static struct etimer periodic_timer;
+PROCESS_THREAD(nbr_discovery_process, ev, data) {
 
   PROCESS_BEGIN();
 
