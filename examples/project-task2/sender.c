@@ -89,7 +89,7 @@ static uint16_t get_light_reading(void);
 static void init_opt_reading(void);
 static uint16_t get_motion_reading(void);
 static void init_mpu_reading(void);
-void receive_packet_callback(const void*, uint16_t, const linkaddr_t*, const linkaddr_t*);
+char receive_packet_callback(const void*, uint16_t, const linkaddr_t*, const linkaddr_t*);
 
 // Starts the main contiki neighbour discovery process
 PROCESS(nbr_discovery_process, "cc2650 neighbour discovery process");
@@ -102,7 +102,7 @@ void receive_packet_return(struct rtimer *t, void *ptr) {
 }
 
 // Function called after reception of a packet
-void receive_packet_callback(const void *data, uint16_t len, const linkaddr_t *src, const linkaddr_t *dest) 
+char receive_packet_callback(const void *data, uint16_t len, const linkaddr_t *src, const linkaddr_t *dest) 
 {
   static discovery_packet_struct received_packet_data;
   static int rssi;

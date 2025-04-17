@@ -84,7 +84,7 @@ static int stationary_secs = 0;
 // Function prototypes
 static int get_motion_reading(void);
 static void init_mpu_reading(void);
-void receive_packet_callback(const void*, uint16_t, const linkaddr_t*, const linkaddr_t*);
+char receive_packet_callback(const void*, uint16_t, const linkaddr_t*, const linkaddr_t*);
 char listening_scheduler(struct rtimer*, void *);
 
 // Starts the main contiki neighbour discovery process
@@ -96,7 +96,7 @@ void receive_packet_return(struct rtimer *t, void *ptr) {
 }
 
 // Function called after reception of a packet
-void receive_packet_callback(const void *data, uint16_t len, const linkaddr_t *src, const linkaddr_t *dest) 
+char receive_packet_callback(const void *data, uint16_t len, const linkaddr_t *src, const linkaddr_t *dest) 
 {
   static discovery_packet_struct received_discovery;
   static data_packet_struct received_data;
@@ -136,6 +136,8 @@ void receive_packet_callback(const void *data, uint16_t len, const linkaddr_t *s
         discovery_pkt.timestamp = clock_time();
         linkaddr_copy(&ack_dest_addr, src);
         ack_num_tries_left = SLEEP_CYCLE; // If node B did not receive within SLEEP_CYCLE, node A has disconnected
+
+        rtimer_set(&rt, RTIMER_NOW() + (RTIMER_SECOND / 1000), 1, (rtimer_callback_t)listening_scheduler, NULL); 
       }
 
     } else if (received_discovery.dest_id == node_id) { // Received ACK packet
