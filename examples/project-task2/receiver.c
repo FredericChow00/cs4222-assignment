@@ -200,7 +200,7 @@ char listening_scheduler(struct rtimer *t, void *ptr) {
   // ((curr_timestamp % CLOCK_SECOND)*1000) / CLOCK_SECOND);
 
   while(1){
-    // printf("LISTENING");
+    printf("LISTENING");
     NETSTACK_RADIO.on();
 
     if (ack_num_tries_left > 0) { // Send pkt to node A to signal to it to start transferring stored readings

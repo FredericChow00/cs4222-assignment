@@ -327,7 +327,7 @@ PROCESS_THREAD(data_collection_process, ev, data) {
 
     // Collect data points at 1 second intervals
     while(data_count < SEND_REPEATS * MAX_DATA_POINTS) {
-      etimer_set(&data_collection_timer, CLOCK_SECOND / 5);
+      etimer_set(&data_collection_timer, CLOCK_SECOND);
       PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&data_collection_timer));
       
       // Get sensor readings
