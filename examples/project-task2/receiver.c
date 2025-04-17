@@ -226,9 +226,29 @@ char listening_scheduler(struct rtimer *t, void *ptr) {
   PT_END(&pt);
 }
 
+char wait_for_sig_motion(struct rtimer *t, void *ptr) {
+  int reading = get_motion_reading();
+  rtimer_clock_t curr = RTIMER_TIME(t);
+  if (reading < SIGNIFICANT_MOTION) {
+    if (curr - last > (60 * RTIMER_SECOND) ) {
+      last = UINT64_MAX;
+      rtimer_set(&rt, curr + RTIMER_SECOND / 1000, 1, (rtimer_callback_t)listening_scheduler, NULL);
+    } else {
+      rtimer_set(&rt, curr + RTIMER_SECOND / 4, 1, (rtimer_callback_t)wait_for_sig_motion, NULL);
+    }
+  } else {
+    last = curr;
+    rtimer_set(&rt, curr + RTIMER_SECOND / 1000, 1, (rtimer_callback_t)listening_scheduler, NULL);
+  }
+}
+
+char wait_for_sig_motion_main(struct rtimer *t, void *ptr) {
+
+}
+
+
 static int get_motion_reading() {
   int x = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_ACC_X);
-  int y = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_ACC_Y);
   int z = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_ACC_Z);
   
   int rot_x = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_GYRO_X);
