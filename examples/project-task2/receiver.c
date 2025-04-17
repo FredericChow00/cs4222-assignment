@@ -34,7 +34,7 @@ linkaddr_t ack_dest_addr;
 #define SEND_REPEATS 5
 
 #define SIGNIFICANT_MOTION 150
-#define MINUTE 60
+#define MINUTE 3
 
 /*---------------------------------------------------------------------------*/
 typedef struct {
@@ -84,7 +84,8 @@ static int stationary_secs = 0;
 // Function prototypes
 static int get_motion_reading(void);
 static void init_mpu_reading(void);
-char receive_packet_callback(const void*, uint16_t, const linkaddr_t*, const linkaddr_t*);
+char receive_packet_callback(const void *data, uint16_t len, const linkaddr_t *src, const linkaddr_t *dest);
+char wait_for_sig_motion(struct rtimer*, void *);
 char listening_scheduler(struct rtimer*, void *);
 
 // Starts the main contiki neighbour discovery process
@@ -279,23 +280,24 @@ PROCESS_THREAD(nbr_discovery_process, ev, data) {
 
   init_mpu_reading();
 
-  // while (not_stationary_for_a_min) {
-  //   etimer_set(&stationary_timer, CLOCK_SECOND);
-  //   PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&stationary_timer));
+  while (not_stationary_for_a_min) {
+    etimer_set(&stationary_timer, CLOCK_SECOND);
+    PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&stationary_timer));
 
-  //   int motion = get_motion_reading();
+    int motion = get_motion_reading();
 
-  //   if (motion < SIGNIFICANT_MOTION) {
-  //     printf("stationary for %d s\n", stationary_secs+1);
-  //     stationary_secs ++;
-  //     if (stationary_secs == MINUTE) {
-  //       not_stationary_for_a_min = false;
-  //     }
-  //   } else {
-  //     printf("movement detected, restart\n");
-  //     stationary_secs = 0;
-  //   }
-  // }
+    if (motion < SIGNIFICANT_MOTION) {
+      printf("stationary for %d s\n", stationary_secs+1);
+      stationary_secs ++;
+      if (stationary_secs == MINUTE) {
+        not_stationary_for_a_min = false;
+        break;
+      }
+    } else {
+      printf("movement detected, restart\n");
+      stationary_secs = 0;
+    }
+  }
 
   // initialize data packet sent for neighbour discovery exchange
   discovery_pkt.src_id = node_id; //Initialize the node ID

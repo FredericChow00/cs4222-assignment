@@ -35,7 +35,7 @@ linkaddr_t dest_addr;
 #define MOTION_THRESHOLD 500
 
 #define SIGNIFICANT_MOTION 150
-#define MINUTE 60
+#define MINUTE 3
 /*---------------------------------------------------------------------------*/
 typedef struct {
   uint16_t src_id; // uint16_t according to Contiki source code
@@ -264,8 +264,8 @@ static uint16_t get_motion_reading() {
   // Aggregate accel and gyro magnutude into a single value
   int motion_value = accel_magnitude + (gyro_magnitude / 100);
   
-  printf("Motion reading: Accel=%d, Gyro=%d, Combined=%d\n", 
-    accel_magnitude, gyro_magnitude, motion_value);
+  // printf("Motion reading: Accel=%d, Gyro=%d, Combined=%d\n", 
+  //   accel_magnitude, gyro_magnitude, motion_value);
     
   return motion_value;
 }
@@ -284,23 +284,6 @@ PROCESS_THREAD(data_collection_process, ev, data) {
 
   init_mpu_reading();
 
-  // while (not_stationary_for_a_min) {
-  //   etimer_set(&stationary_timer, CLOCK_SECOND);
-  //   PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&stationary_timer));
-
-  //   int motion = get_motion_reading();
-
-  //   if (motion < SIGNIFICANT_MOTION) {
-  //     printf("stationary for %d s\n", stationary_secs+1);
-  //     stationary_secs ++;
-  //     if (stationary_secs == MINUTE) {
-  //       not_stationary_for_a_min = false;
-  //     }
-  //   } else {
-  //     printf("movement detected, restart\n");
-  //     stationary_secs = 0;
-  //   }
-  // }
 
   discovery_packet.src_id = node_id; //Initialize the node ID
   discovery_packet.dest_id = node_id; // Same as src_id to indicate as broadcast message
@@ -318,12 +301,12 @@ PROCESS_THREAD(data_collection_process, ev, data) {
     motion = 0;
 
     // Block here until motion > MOTION_THRESHOLD
-    // printf("Waiting for significant motion...");
-    // while (motion < MOTION_THRESHOLD) {
-    //   etimer_set(&data_collection_timer, CLOCK_SECOND / 4);
-    //   PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&data_collection_timer));
-    //   motion = get_motion_reading();
-    // };
+    printf("Waiting for significant motion...");
+    while (motion < MOTION_THRESHOLD) {
+      etimer_set(&data_collection_timer, CLOCK_SECOND / 4);
+      PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&data_collection_timer));
+      motion = get_motion_reading();
+    };
 
     // Collect data points at 1 second intervals
     while(data_count < SEND_REPEATS * MAX_DATA_POINTS) {
@@ -344,6 +327,24 @@ PROCESS_THREAD(data_collection_process, ev, data) {
     }
     
     data_packet_sent = 0;
+    
+    while (not_stationary_for_a_min) {
+      etimer_set(&stationary_timer, CLOCK_SECOND);
+      PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&stationary_timer));
+
+      int motion = get_motion_reading();
+
+      if (motion < SIGNIFICANT_MOTION) {
+        printf("stationary for %d s\n", stationary_secs+1);
+        stationary_secs ++;
+        if (stationary_secs == MINUTE) {
+          break;
+        }
+      } else {
+        printf("movement detected, restart\n");
+        stationary_secs = 0;
+      }
+    }
 
     // Start the neighbor discovery process
     printf("CC2650 neighbour discovery\n");
