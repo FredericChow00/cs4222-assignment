@@ -149,8 +149,8 @@ char receive_packet_callback(const void *data, uint16_t len, const linkaddr_t *s
         NETSTACK_NETWORK.output(src);
         discovery_packet.dest_id = node_id; // Reset to broadcast
 
-        rtimer_set(&rt, RTIMER_NOW() + WAKE_TIME, 1, (rtimer_callback_t)receive_packet_callback, NULL);
-        PT_YIELD(&pt_rcv);
+        // rtimer_set(&rt, RTIMER_NOW() + WAKE_TIME, 1, (rtimer_callback_t)receive_packet_callback, NULL);
+        // PT_YIELD(&pt_rcv);
 
         // Send data_packet to node B
         printf("%lu TRANSFER %lu RSSI: %d\n", curr_timestamp / CLOCK_SECOND, received_packet_data.src_id, rssi);
@@ -348,7 +348,9 @@ PROCESS_THREAD(data_collection_process, ev, data) {
     // Start the neighbor discovery process
     printf("CC2650 neighbour discovery\n");
     printf("Node %d will be sending discovery packets of size %d Bytes\n", node_id, (int)sizeof(discovery_packet_struct));
-    nullnet_set_input_callback(receive_packet_callback); //initialize receiver callback
+
+    //initialize receiver callback
+    nullnet_set_input_callback((void(*)(const void*, uint16_t, const linkaddr_t*, const linkaddr_t*))receive_packet_callback); // Typecast to fix mac issue
 
     // Start sender in one millisecond.
     rtimer_set(&rt, RTIMER_NOW() + (RTIMER_SECOND / 1000), 1, (rtimer_callback_t)sender_scheduler, NULL);

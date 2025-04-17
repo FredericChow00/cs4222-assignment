@@ -136,8 +136,6 @@ char receive_packet_callback(const void *data, uint16_t len, const linkaddr_t *s
         discovery_pkt.timestamp = clock_time();
         linkaddr_copy(&ack_dest_addr, src);
         ack_num_tries_left = SLEEP_CYCLE; // If node B did not receive within SLEEP_CYCLE, node A has disconnected
-
-        rtimer_set(&rt, RTIMER_NOW() + (RTIMER_SECOND / 1000), 1, (rtimer_callback_t)listening_scheduler, NULL); 
       }
 
     } else if (received_discovery.dest_id == node_id) { // Received ACK packet
@@ -146,7 +144,7 @@ char receive_packet_callback(const void *data, uint16_t len, const linkaddr_t *s
 
       rt.func = receive_packet_return; // Stop callback to sender_scheduler()
       rtimer_run_next(); // Run callback to ensure no interruption from rtimer
-      rtimer_set(&rt, RTIMER_NOW() + RTIMER_SECOND * 1.5, 1, (rtimer_callback_t)listening_scheduler, NULL); // Sufficient time to receive data packet
+      rtimer_set(&rt, RTIMER_NOW() + WAKE_TIME * SLEEP_CYCLE * 2, 1, (rtimer_callback_t)listening_scheduler, NULL); // Sufficient time to receive data packet
     }
 
   } else if (len == sizeof(data_packet_struct)) {    
@@ -156,7 +154,7 @@ char receive_packet_callback(const void *data, uint16_t len, const linkaddr_t *s
     // Check if packet was sent to this node
     if (received_data.dest_id == node_id) {
 
-      // printf("Received %d data points\n", MAX_DATA_POINTS);
+      printf("Received %d data points\n", MAX_DATA_POINTS);
 
       //Packets received, split into SEND_REPEATS number of sends
       for (count = 0; count < MAX_DATA_POINTS; count++) {
@@ -175,13 +173,15 @@ char receive_packet_callback(const void *data, uint16_t len, const linkaddr_t *s
           printf(", %u", motion_data[data_count]);
         }
         printf("\n");
-
-        rtimer_set(&rt, RTIMER_NOW() + (RTIMER_SECOND / 1000), 1, (rtimer_callback_t)listening_scheduler, NULL); 
       }
 
       // printf("OUT\n");
     }
   }
+
+  // Will be ignored if there is any existing rtimer callback
+  rtimer_set(&rt, RTIMER_NOW() + (RTIMER_SECOND / 1000), 1, (rtimer_callback_t)listening_scheduler, NULL);
+
   PT_END(&pt_rcv);
 }
 
@@ -200,22 +200,25 @@ char listening_scheduler(struct rtimer *t, void *ptr) {
   // ((curr_timestamp % CLOCK_SECOND)*1000) / CLOCK_SECOND);
 
   while(1){
-    // printf("LISTENING");
+    printf("LISTENING");
+    NETSTACK_RADIO.on();
+
     if (ack_num_tries_left > 0) { // Send pkt to node A to signal to it to start transferring stored readings
       ack_num_tries_left--;
+      nullnet_buf = (uint8_t *)&discovery_pkt; //data transmitted
+      nullnet_len = sizeof(discovery_pkt); //length of data transmitted
       NETSTACK_NETWORK.output(&ack_dest_addr); //Packet transmission
   
       rtimer_set(&rt, RTIMER_TIME(t) + WAKE_TIME, 1, (rtimer_callback_t)listening_scheduler, NULL);
       PT_YIELD(&pt);
 
     } else { // Don't need to send any packets until received a discovery packet from node A
+      rtimer_set(&rt, RTIMER_TIME(t) + WAKE_TIME, 1, (rtimer_callback_t)listening_scheduler, NULL);
+      PT_YIELD(&pt);
+
       NETSTACK_RADIO.off();
       // (SLEEP_SLOT = 65536 / 22) * (SLEEP_CYCLE = 11 - 1) <= 2147483647 so it won't overflow
       rtimer_set(&rt, RTIMER_TIME(t) + SLEEP_SLOT * SLEEP_CYCLE, 1, (rtimer_callback_t)listening_scheduler, NULL);
-      PT_YIELD(&pt);
-
-      NETSTACK_RADIO.on(); // on() is at bottom to ensure radio is on for the next loop
-      rtimer_set(&rt, RTIMER_TIME(t) + WAKE_TIME, 1, (rtimer_callback_t)listening_scheduler, NULL);
       PT_YIELD(&pt);
     }
   }
@@ -277,7 +280,9 @@ PROCESS_THREAD(nbr_discovery_process, ev, data) {
   // initialize data packet sent for neighbour discovery exchange
   discovery_pkt.src_id = node_id; //Initialize the node ID
   
-  nullnet_set_input_callback(receive_packet_callback); //initialize receiver callback
+  //initialize receiver callback
+  nullnet_set_input_callback((void(*)(const void*, uint16_t, const linkaddr_t*, const linkaddr_t*))receive_packet_callback); // Typecast to fix mac issue
+
   linkaddr_copy(&dest_addr, &linkaddr_null);
 
   printf("CC2650 neighbour discovery\n");
