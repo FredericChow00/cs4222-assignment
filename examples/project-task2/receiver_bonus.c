@@ -263,24 +263,24 @@ PROCESS_THREAD(nbr_discovery_process, ev, data) {
 
   init_mpu_reading();
 
-  // while (not_stationary_for_a_min) {
-  //   etimer_set(&stationary_timer, CLOCK_SECOND);
-  //   PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&stationary_timer));
+  while (not_stationary_for_a_min) {
+    etimer_set(&stationary_timer, CLOCK_SECOND);
+    PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&stationary_timer));
 
-  //   uint16_t motion = get_motion_reading();
+    uint16_t motion = get_motion_reading();
 
-  //   if (motion < SIGNIFICANT_MOTION) {
-  //     printf("stationary for %d s\n", stationary_secs+1);
-  //     stationary_secs ++;
-  //     if (stationary_secs == MINUTE) {
-  //       not_stationary_for_a_min = false;
-  //       break;
-  //     }
-  //   } else {
-  //     printf("movement detected, restart\n");
-  //     stationary_secs = 0;
-  //   }
-  // }
+    if (motion < SIGNIFICANT_MOTION) {
+      printf("stationary for %d s\n", stationary_secs+1);
+      stationary_secs ++;
+      if (stationary_secs == MINUTE) {
+        not_stationary_for_a_min = false;
+        break;
+      }
+    } else {
+      printf("movement detected, restart\n");
+      stationary_secs = 0;
+    }
+  }
 
   // initialize data packet sent for neighbour discovery exchange
   discovery_pkt.src_id = node_id; //Initialize the node ID

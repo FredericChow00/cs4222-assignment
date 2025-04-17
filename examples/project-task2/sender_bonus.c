@@ -304,12 +304,12 @@ PROCESS_THREAD(data_collection_process, ev, data) {
     motion = 0;
 
     // Block here until motion > MOTION_THRESHOLD
-    // printf("Waiting for significant motion...");
-    // while (motion < MOTION_THRESHOLD) {
-    //   etimer_set(&data_collection_timer, CLOCK_SECOND / 4);
-    //   PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&data_collection_timer));
-    //   motion = get_motion_reading();
-    // };
+    printf("Waiting for significant motion...");
+    while (motion < MOTION_THRESHOLD) {
+      etimer_set(&data_collection_timer, CLOCK_SECOND / 4);
+      PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&data_collection_timer));
+      motion = get_motion_reading();
+    };
 
     // Collect data points at 1 second intervals
     while(data_count < SEND_REPEATS * MAX_DATA_POINTS) {
@@ -332,23 +332,23 @@ PROCESS_THREAD(data_collection_process, ev, data) {
     data_packet_sent = 0;
     stationary_secs = 0;
     
-    // while (not_stationary_for_a_min) {
-    //   etimer_set(&stationary_timer, CLOCK_SECOND);
-    //   PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&stationary_timer));
+    while (not_stationary_for_a_min) {
+      etimer_set(&stationary_timer, CLOCK_SECOND);
+      PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&stationary_timer));
 
-    //   uint16_t motion = get_motion_reading();
+      uint16_t motion = get_motion_reading();
 
-    //   if (motion < SIGNIFICANT_MOTION) {
-    //     printf("stationary for %d s\n", stationary_secs+1);
-    //     stationary_secs ++;
-    //     if (stationary_secs == MINUTE) {
-    //       break;
-    //     }
-    //   } else {
-    //     printf("movement detected, restart\n");
-    //     stationary_secs = 0;
-    //   }
-    // }
+      if (motion < SIGNIFICANT_MOTION) {
+        printf("stationary for %d s\n", stationary_secs+1);
+        stationary_secs ++;
+        if (stationary_secs == MINUTE) {
+          break;
+        }
+      } else {
+        printf("movement detected, restart\n");
+        stationary_secs = 0;
+      }
+    }
 
     curr_timestamp = clock_time();
 
