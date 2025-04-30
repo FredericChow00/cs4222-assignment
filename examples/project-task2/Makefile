@@ -1,4 +1,4 @@
-CONTIKI_PROJECT = sender receiver
+CONTIKI_PROJECT = sender receiver sender_bonus receiver_bonus
 all: $(CONTIKI_PROJECT)
 
 TARGET=cc26x0-cc13x0
