@@ -306,7 +306,7 @@ PROCESS_THREAD(nbr_discovery_process, ev, data) {
     has_ended = 0;
 
     // Start sender in one millisecond.
-    rt.func = (void(*)(struct rtimer*, void *))listening_scheduler;
+    rt.func = (rtimer_callback_t)listening_scheduler;
     rtimer_set(&rt, RTIMER_NOW() + (RTIMER_SECOND / 1000), 1, (rtimer_callback_t)listening_scheduler, NULL);
     PROCESS_WAIT_EVENT_UNTIL(ev == PROCESS_EVENT_POLL);
     printf("got here\n");
