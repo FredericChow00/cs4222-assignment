@@ -32,9 +32,9 @@ linkaddr_t dest_addr;
 
 #define NUM_SEND 2
 
-#define MOTION_THRESHOLD 130
+#define MOTION_THRESHOLD 500
 
-#define SIGNIFICANT_MOTION 110
+#define SIGNIFICANT_MOTION 150
 #define MINUTE 60
 /*---------------------------------------------------------------------------*/
 typedef struct {
@@ -135,11 +135,11 @@ char receive_packet_callback(const void *data, uint16_t len, const linkaddr_t *s
         // PT_EXIT(&pt); // Restart protothread
         data_packet_sent = 1;
 
-        // // Get the current time stamp
-        // curr_timestamp = clock_time();
+        // Get the current time stamp
+        curr_timestamp = clock_time();
 
         // Based on node A timestamp
-        printf("%lu DETECT %d\n", (clock_time() - curr_timestamp) / CLOCK_SECOND, received_packet_data.src_id);
+        printf("%lu DETECT %d\n", curr_timestamp / CLOCK_SECOND, received_packet_data.src_id);
 
         // Send ACK packet to node B
         discovery_packet.dest_id = received_packet_data.src_id;
@@ -153,7 +153,7 @@ char receive_packet_callback(const void *data, uint16_t len, const linkaddr_t *s
         // PT_YIELD(&pt_rcv);
 
         // Send data_packet to node B
-        printf("%lu TRANSFER %lu RSSI: %d\n", (clock_time() - curr_timestamp) / CLOCK_SECOND, received_packet_data.src_id, rssi);
+        printf("%lu TRANSFER %lu RSSI: %d\n", curr_timestamp / CLOCK_SECOND, received_packet_data.src_id, rssi);
         data_packet.dest_id = received_packet_data.src_id;
         nullnet_buf = (uint8_t *)&data_packet; //data transmitted
         nullnet_len = sizeof(data_packet); //length of data transmitted
@@ -186,7 +186,7 @@ char sender_scheduler(struct rtimer *t, void *ptr) {
   PT_BEGIN(&pt);
 
   // Get the current time stamp
-  // curr_timestamp = clock_time();
+  curr_timestamp = clock_time();
 
   // printf("Start clock %lu ticks, timestamp %3lu.%03lu\n", curr_timestamp, curr_timestamp / CLOCK_SECOND, 
   // ((curr_timestamp % CLOCK_SECOND)*1000) / CLOCK_SECOND);
@@ -202,9 +202,9 @@ char sender_scheduler(struct rtimer *t, void *ptr) {
       nullnet_buf = (uint8_t *)&discovery_packet; //data transmitted
       nullnet_len = sizeof(discovery_packet); //length of data transmitted
 
-      // curr_timestamp = clock_time();
+      curr_timestamp = clock_time();
       
-      discovery_packet.timestamp = clock_time();
+      discovery_packet.timestamp = curr_timestamp;
 
       NETSTACK_NETWORK.output(&dest_addr); //Packet transmission
 
@@ -234,9 +234,9 @@ static uint16_t get_light_reading() {
   value = opt_3001_sensor.value(0);
   if (value != CC26XX_SENSOR_READING_ERROR) {
     lux_value = value / 100;
-    // printf("Light reading: %d.%02d lux\n", lux_value, value % 100);
+    printf("Light reading: %d.%02d lux\n", lux_value, value % 100);
   } else {
-    // printf("Light Sensor's Warming Up\n");
+    printf("Light Sensor's Warming Up\n");
   }
 
   init_opt_reading();
@@ -253,24 +253,21 @@ static uint16_t get_motion_reading() {
   int y = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_ACC_Y);
   int z = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_ACC_Z);
   
-  // int rot_x = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_GYRO_X);
-  // int rot_y = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_GYRO_Y);
-  // int rot_z = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_GYRO_Z);
+  int rot_x = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_GYRO_X);
+  int rot_y = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_GYRO_Y);
+  int rot_z = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_GYRO_Z);
 
   // Calculate magnitude of acceleration and rotation
   int accel_magnitude = sqrt(x*x + y*y + z*z);
-  // int gyro_magnitude = sqrt(rot_x*rot_x + rot_y*rot_y + rot_z*rot_z);
+  int gyro_magnitude = sqrt(rot_x*rot_x + rot_y*rot_y + rot_z*rot_z);
   
   // Aggregate accel and gyro magnutude into a single value
-  // int motion_value = accel_magnitude + (gyro_magnitude / 100);
+  int motion_value = accel_magnitude + (gyro_magnitude / 100);
   
-  // printf("Motion reading: Accel=%d, Gyro=%d, Combined=%d\n", 
-  //   accel_magnitude, gyro_magnitude, motion_value);
-
-  // printf("Motion reading: Accel=%d\n", 
-    // accel_magnitude);
+  printf("Motion reading: Accel=%d, Gyro=%d, Combined=%d\n", 
+    accel_magnitude, gyro_magnitude, motion_value);
     
-  return accel_magnitude;
+  return motion_value;
 }
 
 static void init_mpu_reading(void) {
@@ -287,6 +284,23 @@ PROCESS_THREAD(data_collection_process, ev, data) {
 
   init_mpu_reading();
 
+  // while (not_stationary_for_a_min) {
+  //   etimer_set(&stationary_timer, CLOCK_SECOND);
+  //   PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&stationary_timer));
+
+  //   int motion = get_motion_reading();
+
+  //   if (motion < SIGNIFICANT_MOTION) {
+  //     printf("stationary for %d s\n", stationary_secs+1);
+  //     stationary_secs ++;
+  //     if (stationary_secs == MINUTE) {
+  //       not_stationary_for_a_min = false;
+  //     }
+  //   } else {
+  //     printf("movement detected, restart\n");
+  //     stationary_secs = 0;
+  //   }
+  // }
 
   discovery_packet.src_id = node_id; //Initialize the node ID
   discovery_packet.dest_id = node_id; // Same as src_id to indicate as broadcast message
@@ -330,30 +344,9 @@ PROCESS_THREAD(data_collection_process, ev, data) {
     }
     
     data_packet_sent = 0;
-    stationary_secs = 0;
-    
-    // while (not_stationary_for_a_min) {
-    //   etimer_set(&stationary_timer, CLOCK_SECOND);
-    //   PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&stationary_timer));
-
-    //   uint16_t motion = get_motion_reading();
-
-    //   if (motion < SIGNIFICANT_MOTION) {
-    //     printf("stationary for %d s\n", stationary_secs+1);
-    //     stationary_secs ++;
-    //     if (stationary_secs == MINUTE) {
-    //       break;
-    //     }
-    //   } else {
-    //     printf("movement detected, restart\n");
-    //     stationary_secs = 0;
-    //   }
-    // }
-
-    curr_timestamp = clock_time();
 
     // Start the neighbor discovery process
-    printf("CC2650 neighbour discovery started at %lu\n", curr_timestamp);
+    printf("CC2650 neighbour discovery\n");
     printf("Node %d will be sending discovery packets of size %d Bytes\n", node_id, (int)sizeof(discovery_packet_struct));
 
     //initialize receiver callback

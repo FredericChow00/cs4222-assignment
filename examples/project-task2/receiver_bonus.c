@@ -80,7 +80,7 @@ static int ack_num_tries_left = 0;
 // Variables to ensure collection of sensor readings only occur after receive node is stationary for a minute
 static bool not_stationary_for_a_min = true;
 static int stationary_secs = 0;
-
+static int has_ended = 0;
 // Function prototypes
 static uint16_t get_motion_reading(void);
 static void init_mpu_reading(void);
@@ -173,14 +173,22 @@ char receive_packet_callback(const void *data, uint16_t len, const linkaddr_t *s
           printf(", %u", motion_data[data_count]);
         }
         printf("\n");
+
+        rt.func = receive_packet_return; // Stop callback to sender_scheduler()
+        rtimer_run_next(); // Run callback to ensure no interruption from rtimer
+        has_ended = 1;
+        process_poll(&nbr_discovery_process);
+        printf("got here");
       }
 
       // printf("OUT\n");
     }
   }
 
-  // Will be ignored if there is any existing rtimer callback
-  rtimer_set(&rt, RTIMER_NOW() + (RTIMER_SECOND / 1000), 1, (rtimer_callback_t)listening_scheduler, NULL);
+  if (!has_ended) {
+    // Will be ignored if there is any existing rtimer callback
+    rtimer_set(&rt, RTIMER_NOW() + (RTIMER_SECOND / 1000), 1, (rtimer_callback_t)listening_scheduler, NULL);
+  }
 
   PT_END(&pt_rcv);
 }
@@ -193,8 +201,6 @@ char listening_scheduler(struct rtimer *t, void *ptr) {
   // Begin the protothread
   PT_BEGIN(&pt);
 
-  // Get the current time stamp
-  curr_timestamp = clock_time();
 
   // printf("Start clock %lu ticks, timestamp %3lu.%03lu\n", curr_timestamp, curr_timestamp / CLOCK_SECOND, 
   // ((curr_timestamp % CLOCK_SECOND)*1000) / CLOCK_SECOND);
@@ -260,41 +266,53 @@ static void init_mpu_reading(void) {
 PROCESS_THREAD(nbr_discovery_process, ev, data) {
 
   PROCESS_BEGIN();
-
   init_mpu_reading();
 
-  while (not_stationary_for_a_min) {
-    etimer_set(&stationary_timer, CLOCK_SECOND);
-    PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&stationary_timer));
-
-    uint16_t motion = get_motion_reading();
-
-    if (motion < SIGNIFICANT_MOTION) {
-      printf("stationary for %d s\n", stationary_secs+1);
-      stationary_secs ++;
-      if (stationary_secs == MINUTE) {
-        not_stationary_for_a_min = false;
-        break;
-      }
-    } else {
-      printf("movement detected, restart\n");
-      stationary_secs = 0;
-    }
-  }
-
-  // initialize data packet sent for neighbour discovery exchange
-  discovery_pkt.src_id = node_id; //Initialize the node ID
+  while (1)
+  {
+    not_stationary_for_a_min = 1;
+    while (not_stationary_for_a_min) {
+      etimer_set(&stationary_timer, CLOCK_SECOND);
+      PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&stationary_timer));
   
-  //initialize receiver callback
-  nullnet_set_input_callback((void(*)(const void*, uint16_t, const linkaddr_t*, const linkaddr_t*))receive_packet_callback); // Typecast to fix mac issue
+      uint16_t motion = get_motion_reading();
+  
+      if (motion < SIGNIFICANT_MOTION) {
+        printf("stationary for %d s\n", stationary_secs+1);
+        stationary_secs ++;
+        if (stationary_secs == MINUTE) {
+          not_stationary_for_a_min = false;
+          break;
+        }
+      } else {
+        printf("movement detected, restart\n");
+        stationary_secs = 0;
+      }
+    }
+  
+    // initialize data packet sent for neighbour discovery exchange
+    discovery_pkt.src_id = node_id; //Initialize the node ID
+    
+    //initialize receiver callback
+    nullnet_set_input_callback((void(*)(const void*, uint16_t, const linkaddr_t*, const linkaddr_t*))receive_packet_callback); // Typecast to fix mac issue
+  
+    linkaddr_copy(&dest_addr, &linkaddr_null);
+  
+    printf("CC2650 neighbour discovery\n");
+    printf("Node %d will be receiving discovery packets of size %d Bytes\n", node_id, (int)sizeof(discovery_packet_struct));
+  
+    // Get the current time stamp
+    curr_timestamp = clock_time();
+    has_ended = 0;
 
-  linkaddr_copy(&dest_addr, &linkaddr_null);
+    // Start sender in one millisecond.
+    rt.func = listening_scheduler;
+    rtimer_set(&rt, RTIMER_NOW() + (RTIMER_SECOND / 1000), 1, (rtimer_callback_t)listening_scheduler, NULL);
+    PROCESS_WAIT_EVENT_UNTIL(ev == PROCESS_EVENT_POLL);
+    printf("got here\n");
+  }
+  
 
-  printf("CC2650 neighbour discovery\n");
-  printf("Node %d will be receiving discovery packets of size %d Bytes\n", node_id, (int)sizeof(discovery_packet_struct));
-
-  // Start sender in one millisecond.
-  rtimer_set(&rt, RTIMER_NOW() + (RTIMER_SECOND / 1000), 1, (rtimer_callback_t)listening_scheduler, NULL);
 
   PROCESS_END();
 }

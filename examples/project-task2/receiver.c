@@ -33,7 +33,7 @@ linkaddr_t ack_dest_addr;
 #define MAX_DATA_POINTS 12   // Collect 10 sets of readings
 #define SEND_REPEATS 5
 
-#define SIGNIFICANT_MOTION 110
+#define SIGNIFICANT_MOTION 150
 #define MINUTE 60
 
 /*---------------------------------------------------------------------------*/
@@ -82,9 +82,9 @@ static bool not_stationary_for_a_min = true;
 static int stationary_secs = 0;
 
 // Function prototypes
-static uint16_t get_motion_reading(void);
+static int get_motion_reading(void);
 static void init_mpu_reading(void);
-char receive_packet_callback(const void *data, uint16_t len, const linkaddr_t *src, const linkaddr_t *dest);
+char receive_packet_callback(const void*, uint16_t, const linkaddr_t*, const linkaddr_t*);
 char listening_scheduler(struct rtimer*, void *);
 
 // Starts the main contiki neighbour discovery process
@@ -200,7 +200,7 @@ char listening_scheduler(struct rtimer *t, void *ptr) {
   // ((curr_timestamp % CLOCK_SECOND)*1000) / CLOCK_SECOND);
 
   while(1){
-    // printf("LISTENING");
+    printf("LISTENING");
     NETSTACK_RADIO.on();
 
     if (ack_num_tries_left > 0) { // Send pkt to node A to signal to it to start transferring stored readings
@@ -226,30 +226,26 @@ char listening_scheduler(struct rtimer *t, void *ptr) {
   PT_END(&pt);
 }
 
-
-static uint16_t get_motion_reading() {
+static int get_motion_reading() {
   int x = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_ACC_X);
   int y = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_ACC_Y);
   int z = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_ACC_Z);
   
-  // int rot_x = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_GYRO_X);
-  // int rot_y = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_GYRO_Y);
-  // int rot_z = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_GYRO_Z);
+  int rot_x = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_GYRO_X);
+  int rot_y = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_GYRO_Y);
+  int rot_z = mpu_9250_sensor.value(MPU_9250_SENSOR_TYPE_GYRO_Z);
 
   // Calculate magnitude of acceleration and rotation
   int accel_magnitude = sqrt(x*x + y*y + z*z);
-  // int gyro_magnitude = sqrt(rot_x*rot_x + rot_y*rot_y + rot_z*rot_z);
+  int gyro_magnitude = sqrt(rot_x*rot_x + rot_y*rot_y + rot_z*rot_z);
   
   // Aggregate accel and gyro magnutude into a single value
-  // int motion_value = accel_magnitude + (gyro_magnitude / 100);
+  int motion_value = accel_magnitude + (gyro_magnitude / 100);
   
-  // printf("Motion reading: Accel=%d, Gyro=%d, Combined=%d\n", 
-  //   accel_magnitude, gyro_magnitude, motion_value);
-
-  // printf("Motion reading: Accel=%d\n", 
-  //   accel_magnitude);
+  printf("Motion reading: Accel=%d, Gyro=%d, Combined=%d\n", 
+    accel_magnitude, gyro_magnitude, motion_value);
     
-  return accel_magnitude;
+  return motion_value;
 }
 
 static void init_mpu_reading(void) {
@@ -267,14 +263,13 @@ PROCESS_THREAD(nbr_discovery_process, ev, data) {
   //   etimer_set(&stationary_timer, CLOCK_SECOND);
   //   PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&stationary_timer));
 
-  //   uint16_t motion = get_motion_reading();
+  //   int motion = get_motion_reading();
 
   //   if (motion < SIGNIFICANT_MOTION) {
   //     printf("stationary for %d s\n", stationary_secs+1);
   //     stationary_secs ++;
   //     if (stationary_secs == MINUTE) {
   //       not_stationary_for_a_min = false;
-  //       break;
   //     }
   //   } else {
   //     printf("movement detected, restart\n");
